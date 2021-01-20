@@ -1,9 +1,13 @@
-module Core exposing
+module Document exposing
     ( Document
     , Error(..)
+    , Value(..)
     , ValueOrError
-    , emptyDocument
+    , empty
     , eval
+    , evalAll
+    , fromList
+    , insert
     )
 
 import Char exposing (isUpper)
@@ -28,112 +32,189 @@ type Error
     = ParsingError (List Parser.DeadEnd)
     | UndefinedNameError Name
     | UndefinedIdError Id
-    | EvaluationError String
+    | TypeError String
     | NameNotFoundForId Id
     | CyclicReferenceError (List Name)
+
+
+type alias Id =
+    Int
+
+
+type alias Name =
+    String
+
+
+type Value
+    = IntValue Int
+    | StringValue String
 
 
 type alias ValueOrError =
     Result Error Value
 
 
-type alias Document =
-    { namesIdx : Dict Name Id
-    , sources : Dict Id String
-    }
+type Document
+    = Document
+        { namesIdx : Dict Name Id
+        , sources : Dict Id String
+        , serial : Serial
+        }
 
 
-emptyDocument : Document
-emptyDocument =
-    { namesIdx = Dict.empty
-    , sources = Dict.empty
-    }
+type Serial
+    = Serial Id
+
+
+next : Serial -> ( Id, Serial )
+next (Serial id) =
+    ( id, Serial <| id + 1 )
+
+
+empty : Document
+empty =
+    Document
+        { namesIdx = Dict.empty
+        , sources = Dict.empty
+        , serial = Serial 0
+        }
+
+
+insert : String -> String -> Document -> Document
+insert name value (Document { sources, namesIdx, serial }) =
+    let
+        ( id, newSerial ) =
+            case Dict.get name namesIdx of
+                Nothing ->
+                    next serial
+
+                Just id_ ->
+                    ( id_, serial )
+    in
+    Document
+        { namesIdx = Dict.insert name id namesIdx
+        , sources = Dict.insert id value sources
+        , serial = newSerial
+        }
+
+
+fromList : List ( String, String ) -> Document
+fromList pairs =
+    List.foldl (\( a, b ) -> insert a b) empty pairs
 
 
 type alias Memo =
     Dict Name ValueOrError
 
 
+names : Document -> List Name
+names (Document { namesIdx }) =
+    Dict.keys namesIdx
+
+
+evalAll : Document -> Dict Name ValueOrError
+evalAll doc =
+    List.foldl
+        (\name memo -> Tuple.second <| eval name memo doc)
+        Dict.empty
+        (names doc)
+
+
 eval : Name -> Memo -> Document -> ( ValueOrError, Memo )
 eval name memo doc =
+    evalHelp [] name memo doc
+
+
+evalHelp : List Name -> Name -> Memo -> Document -> ( ValueOrError, Memo )
+evalHelp ancestors name memo_ doc =
     let
-        evalBinaryOp : Memo -> AST -> AST -> (ValueOrError -> ValueOrError -> ValueOrError) -> ( ValueOrError, Memo )
-        evalBinaryOp memo_ x y f =
+        evalBinaryOp memo x y f =
             let
                 ( xVal, xMemo ) =
-                    evalAst memo_ x
+                    evalAst memo x
 
                 ( yVal, yMemo ) =
                     evalAst xMemo y
 
-                v =
-                    f xVal yVal
+                res =
+                    R.andThen
+                        (\xx -> R.andThen (\yy -> f xx yy) yVal)
+                        xVal
             in
-            ( v, yMemo )
+            ( res, yMemo )
 
         evalAst : Memo -> AST -> ( ValueOrError, Memo )
-        evalAst memo_ ast =
+        evalAst memo ast =
             case ast of
                 IntLiteral i ->
-                    ( Ok <| IntValue i, memo_ )
+                    ( Ok <| IntValue i, memo )
 
                 StringLiteral s ->
-                    ( Ok <| StringValue s, memo_ )
+                    ( Ok <| StringValue s, memo )
 
                 Plus x y ->
-                    evalBinaryOp memo_
+                    evalBinaryOp
+                        memo
                         x
                         y
                         (\xVal yVal ->
                             case ( xVal, yVal ) of
-                                ( Ok (IntValue i), Ok (IntValue j) ) ->
+                                ( IntValue i, IntValue j ) ->
                                     Ok <| IntValue (i + j)
 
                                 _ ->
-                                    Err <| EvaluationError "(+) works only on IntValue"
+                                    Err <| TypeError "(+) works only on IntValue"
                         )
 
                 Minus x y ->
-                    evalBinaryOp memo_
+                    evalBinaryOp
+                        memo
                         x
                         y
                         (\xVal yVal ->
                             case ( xVal, yVal ) of
-                                ( Ok (IntValue i), Ok (IntValue j) ) ->
+                                ( IntValue i, IntValue j ) ->
                                     Ok <| IntValue (i - j)
 
                                 _ ->
-                                    Err <| EvaluationError "(-) works only on IntValue"
+                                    Err <| TypeError "(-) works only on IntValue"
                         )
 
                 Reference refName ->
-                    eval refName memo_ doc
+                    evalHelp (name :: ancestors) refName memo doc
 
-        memoize ( v, memo_ ) =
-            ( v, Dict.insert name v memo_ )
+        (Document { namesIdx, sources }) =
+            doc
+
+        memoize ( v, m ) =
+            ( v, Dict.insert name v m )
 
         getSource id =
-            Dict.get id doc.sources |> R.fromMaybe (UndefinedIdError id)
+            Dict.get id sources |> R.fromMaybe (UndefinedIdError id)
     in
-    case Dict.get name memo of
-        Just v ->
-            ( v, memo )
+    if List.member name ancestors then
+        ( Err <| CyclicReferenceError ancestors, memo_ )
 
-        Nothing ->
-            Dict.get name doc.namesIdx
-                |> R.fromMaybe (UndefinedNameError name)
-                |> R.andThen getSource
-                |> R.andThen parse
-                |> R.map (evalAst memo)
-                |> (\ast_ ->
-                        case ast_ of
-                            Err e ->
-                                ( Err e, memo )
+    else
+        case Dict.get name memo_ of
+            Just v ->
+                ( v, memo_ )
 
-                            Ok v ->
-                                v
-                   )
-                |> memoize
+            Nothing ->
+                Dict.get name namesIdx
+                    |> R.fromMaybe (UndefinedNameError name)
+                    |> R.andThen getSource
+                    |> R.andThen parse
+                    |> R.map (evalAst memo_)
+                    |> (\ast_ ->
+                            case ast_ of
+                                Err e ->
+                                    ( Err e, memo_ )
+
+                                Ok v ->
+                                    v
+                       )
+                    |> memoize
 
 
 parse : String -> Result Error AST

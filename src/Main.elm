@@ -1,13 +1,12 @@
 module Main exposing (..)
 
 import Browser
-import Core exposing (ValueOrError)
 import Dict exposing (Dict)
+import Document as Doc exposing (Value(..), ValueOrError)
 import Html exposing (Html, text)
 import Maybe as M
 import Result as R
 import Set exposing (Set)
-import Types exposing (..)
 
 
 main =
@@ -26,7 +25,7 @@ main =
 
 
 type alias Model =
-    Core.Document
+    Doc.Document
 
 
 
@@ -42,7 +41,7 @@ init flags =
 
 initModel : Model
 initModel =
-    Core.emptyDocument
+    Doc.empty
 
 
 
@@ -101,6 +100,6 @@ viewBody model =
                             s
 
         formattedValue =
-            Core.eval "A1" Dict.empty model |> Tuple.first |> valueToString
+            Doc.eval "A1" Dict.empty model |> Tuple.first |> valueToString
     in
     text formattedValue
