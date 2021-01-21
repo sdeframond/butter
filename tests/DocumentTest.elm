@@ -25,6 +25,15 @@ suite =
                     Expect.equal
                         (empty |> insert "sheet" "a" "qwe")
                         (empty |> insert "sheet" "a" "qwe" |> insert "sheet" "a" "qwe")
+            , test "does not change sheet order" <|
+                \_ ->
+                    let
+                        doc =
+                            singleSheet "sheet1" |> insertSheet "sheet2"
+                    in
+                    Expect.equal
+                        (sheets doc)
+                        (insert "sheet1" "a" "1" doc |> sheets)
             ]
         , describe "source"
             [ test "retrieves the source of a cell" <|

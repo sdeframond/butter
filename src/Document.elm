@@ -118,19 +118,23 @@ insertSheet name doc =
 findOrCreateSheet : Name -> Document -> ( SheetId, Document )
 findOrCreateSheet name (Document d) =
     let
-        ( id, newSerial ) =
+        ( id, serial, sheetIds ) =
             case OD.get name d.sheetIds of
                 Just id_ ->
-                    ( id_, d.serial )
+                    ( id_, d.serial, d.sheetIds )
 
                 Nothing ->
-                    next d.serial
+                    let
+                        ( id_, serial_ ) =
+                            next d.serial
+                    in
+                    ( id_, serial_, OD.insert name id_ d.sheetIds )
     in
     ( id
     , Document
         { d
-            | serial = newSerial
-            , sheetIds = OD.insert name id d.sheetIds
+            | serial = serial
+            , sheetIds = sheetIds
         }
     )
 
