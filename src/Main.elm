@@ -9,7 +9,7 @@ import Document as Doc exposing (Name, Value(..), ValueOrError)
 import Html
 import Html.Styled as H exposing (..)
 import Html.Styled.Attributes exposing (css, value)
-import Html.Styled.Events exposing (onClick, onInput)
+import Html.Styled.Events exposing (onClick, onDoubleClick, onInput)
 import List as L
 import Maybe as M
 import Result as R
@@ -35,7 +35,15 @@ main =
 type alias Model =
     { doc : Doc.Document
     , edit : Maybe ( Col, Row )
+    , currentSheet : Name
+    , sheetCounter : Int
     }
+
+
+type EditStatus
+    = NotEditing
+    | EditingSheet Name String
+    | EditingCell ( Name, Name ) String
 
 
 type alias Col =
@@ -60,13 +68,15 @@ init flags =
 initModel : Model
 initModel =
     { doc =
-        Doc.fromList
+        Doc.fromList "Sheet1"
             [ ( "A1", "=1+\"a\"" )
             , ( "A2", "=A1+1" )
             , ( "A3", "=A4" )
             , ( "A4", "=A3" )
             , ( "A5", "=A32" )
             ]
+    , currentSheet = "Sheet1"
+    , sheetCounter = 2
     , edit = Nothing
     }
 
@@ -80,6 +90,10 @@ initModel =
 type Msg
     = EditCell Col Row
     | UpdateSource Name String
+    | InsertSheet
+    | SelectSheet Name
+    | RemoveSheet Name
+    | EditSheet Name
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -94,7 +108,47 @@ updateModel msg model =
             { model | edit = Just ( col, row ) }
 
         UpdateSource name src ->
-            { model | doc = Doc.insert name src model.doc }
+            { model | doc = Doc.insert model.currentSheet name src model.doc }
+
+        InsertSheet ->
+            { model
+                | doc =
+                    Doc.insertSheet
+                        ("Sheet" ++ String.fromInt model.sheetCounter)
+                        model.doc
+                , sheetCounter = model.sheetCounter + 1
+            }
+
+        SelectSheet name ->
+            if L.member name (Doc.sheets model.doc) then
+                { model | currentSheet = name }
+
+            else
+                model
+
+        RemoveSheet name ->
+            let
+                doc =
+                    Doc.removeSheet name model.doc
+            in
+            case Doc.sheets doc of
+                [] ->
+                    model
+
+                head :: rest ->
+                    Debug.log ""
+                        { model
+                            | doc = doc
+                            , currentSheet =
+                                if L.member model.currentSheet rest then
+                                    model.currentSheet
+
+                                else
+                                    head
+                        }
+
+        EditSheet name ->
+            model
 
 
 
@@ -117,17 +171,25 @@ subscriptions model =
 view : Model -> Browser.Document Msg
 view model =
     { title = "Butter Spreadsheet"
-    , body = [ viewBody model |> toUnstyled ]
+    , body =
+        [ tableView model |> toUnstyled
+        , sheetSelector model |> toUnstyled
+        ]
     }
 
 
-viewBody : Model -> Html Msg
-viewBody model =
+tableView : Model -> Html Msg
+tableView model =
     let
         valueToString val =
             case val of
                 Err e ->
-                    Debug.toString e
+                    case e of
+                        Doc.UndefinedNameError _ ->
+                            ""
+
+                        r ->
+                            Debug.toString r
 
                 Ok v ->
                     case v of
@@ -136,10 +198,6 @@ viewBody model =
 
                         StringValue s ->
                             s
-
-        results =
-            model.doc
-                |> Doc.evalAll
 
         toLetter i =
             Char.fromCode (i - 1 + Char.toCode 'A') |> S.fromChar
@@ -163,14 +221,13 @@ viewBody model =
                         |> S.concat
 
                 defaultCell =
-                    D.get name results
-                        |> M.map valueToString
-                        |> M.withDefault ""
+                    Doc.get model.currentSheet name model.doc
+                        |> valueToString
                         |> text
 
                 editCell =
                     input
-                        [ value (Doc.source name model.doc |> M.withDefault "")
+                        [ value (Doc.source model.currentSheet name model.doc |> M.withDefault "")
                         , onInput <| UpdateSource name
                         ]
                         []
@@ -207,3 +264,40 @@ viewBody model =
     H.table
         [ css [ borderCollapse collapse ] ]
         (columnHeaders :: rows)
+
+
+sheetSelector : Model -> Html Msg
+sheetSelector model =
+    let
+        itemCss =
+            css
+                [ border3 (px 1) solid (rgb 100 100 100)
+                , display inlineBlock
+                , padding2 (px 5) (px 5)
+                ]
+
+        sheetItem name =
+            li
+                [ itemCss
+                , css
+                    [ if name == model.currentSheet then
+                        fontWeight bold
+
+                      else
+                        fontWeight normal
+                    ]
+                , onClick <| SelectSheet name
+                , onDoubleClick <| EditSheet name
+                ]
+                [ text name
+                , span [ onClick <| RemoveSheet name ] [ text "[x]" ]
+                ]
+
+        addSheet =
+            li
+                [ itemCss
+                , onClick InsertSheet
+                ]
+                [ text " + " ]
+    in
+    ul [] (addSheet :: (Doc.sheets model.doc |> L.map sheetItem))

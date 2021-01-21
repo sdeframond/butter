@@ -5,20 +5,26 @@ module Document exposing
     , Value(..)
     , ValueOrError
     , empty
-    , eval
-    , evalAll
     , fromList
+    , get
     , insert
+    , insertSheet
+    , removeSheet
+    , sheets
+    , singleSheet
     , source
     )
 
 import Char exposing (isUpper)
 import Debug exposing (log)
 import Dict as D exposing (Dict)
+import List as L
 import Maybe as M
+import OrderedDict as OD exposing (OrderedDict)
 import Parser exposing ((|.), (|=), Parser, andThen, backtrackable, end, int, lazy, map, oneOf, spaces, succeed, symbol, variable)
 import Result as R
 import Set exposing (Set)
+import Tuple as T
 import Types exposing (..)
 
 
@@ -27,24 +33,27 @@ type AST
     | Minus AST AST
     | IntLiteral Int
     | StringLiteral String
-    | Reference String
+    | Reference Name
 
 
 type Error
     = ParsingError (List Parser.DeadEnd)
-    | UndefinedNameError Name
+    | UndefinedNameError LocatedName
     | UndefinedIdError Id
     | TypeError String
-    | NameNotFoundForId Id
-    | CyclicReferenceError (List Name)
+    | CyclicReferenceError (List LocatedName)
 
 
-type alias Id =
+type alias SheetId =
     Int
 
 
 type alias Name =
     String
+
+
+type alias LocatedName =
+    ( Name, Name )
 
 
 type Value
@@ -58,14 +67,14 @@ type alias ValueOrError =
 
 type Document
     = Document
-        { namesIdx : Dict Name Id
-        , sources : Dict Id String
+        { cells : Dict ( SheetId, Name ) String
+        , sheetIds : OrderedDict Name SheetId
         , serial : Serial
         }
 
 
 type Serial
-    = Serial Id
+    = Serial SheetId
 
 
 next : Serial -> ( Id, Serial )
@@ -75,92 +84,137 @@ next (Serial id) =
 
 empty : Document
 empty =
+    let
+        ( sheetId, serial ) =
+            next (Serial 1)
+    in
     Document
-        { namesIdx = D.empty
-        , sources = D.empty
-        , serial = Serial 0
+        { cells = D.empty
+        , sheetIds = OD.empty
+        , serial = serial
         }
 
 
-insert : String -> String -> Document -> Document
-insert name value doc =
+singleSheet : Name -> Document
+singleSheet name =
+    empty |> insertSheet name
+
+
+sheets : Document -> List Name
+sheets (Document { sheetIds }) =
+    OD.keys sheetIds
+
+
+insertSheet : Name -> Document -> Document
+insertSheet name doc =
     let
-        (Document { sources, namesIdx, serial }) =
-            doc
+        ( _, newDoc ) =
+            findOrCreateSheet name doc
     in
-    case value of
-        "" ->
-            remove name doc
+    newDoc
 
-        _ ->
-            let
-                ( id, newSerial ) =
-                    case D.get name namesIdx of
-                        Nothing ->
-                            next serial
 
-                        Just id_ ->
-                            ( id_, serial )
-            in
+findOrCreateSheet : Name -> Document -> ( SheetId, Document )
+findOrCreateSheet name (Document d) =
+    let
+        ( id, newSerial ) =
+            case OD.get name d.sheetIds of
+                Just id_ ->
+                    ( id_, d.serial )
+
+                Nothing ->
+                    next d.serial
+    in
+    ( id
+    , Document
+        { d
+            | serial = newSerial
+            , sheetIds = OD.insert name id d.sheetIds
+        }
+    )
+
+
+removeSheet : Name -> Document -> Document
+removeSheet name (Document d) =
+    case OD.get name d.sheetIds of
+        Nothing ->
+            Document d
+
+        Just id ->
             Document
-                { namesIdx = D.insert name id namesIdx
-                , sources = D.insert id value sources
-                , serial = newSerial
+                { d
+                    | sheetIds = OD.remove name d.sheetIds
+                    , cells = d.cells |> D.filter (\( id_, _ ) _ -> id /= id_)
                 }
 
 
-remove : String -> Document -> Document
-remove name doc =
+insert : Name -> Name -> String -> Document -> Document
+insert sheetName cellName value doc =
     let
-        (Document dict) =
+        ( id, Document d ) =
+            findOrCreateSheet sheetName doc
+    in
+    case value of
+        "" ->
+            remove sheetName cellName doc
+
+        _ ->
+            Document
+                { d | cells = D.insert ( id, cellName ) value d.cells }
+
+
+remove : Name -> Name -> Document -> Document
+remove sheetName cellName doc =
+    let
+        (Document d) =
             doc
     in
-    case D.get name dict.namesIdx of
+    case OD.get sheetName d.sheetIds of
         Nothing ->
             doc
 
         Just id ->
-            Document
-                { dict
-                    | sources = D.remove id dict.sources
-                    , namesIdx = D.remove name dict.namesIdx
-                }
+            Document { d | cells = D.remove ( id, cellName ) d.cells }
 
 
-fromList : List ( String, String ) -> Document
-fromList pairs =
-    List.foldl (\( a, b ) -> insert a b) empty pairs
+fromList : Name -> List ( String, String ) -> Document
+fromList sheet pairs =
+    List.foldl (\( a, b ) -> insert sheet a b) (singleSheet sheet) pairs
 
 
-source : Name -> Document -> Maybe String
-source name (Document { sources, namesIdx }) =
-    D.get name namesIdx
-        |> M.andThen (\id -> D.get id sources)
+source : Name -> Name -> Document -> Maybe String
+source sheetName cellName (Document { cells, sheetIds }) =
+    OD.get sheetName sheetIds
+        |> M.andThen (\id -> D.get ( id, cellName ) cells)
 
 
 type alias Memo =
-    Dict Name ValueOrError
+    Dict LocatedName ValueOrError
 
 
-names : Document -> List Name
-names (Document { namesIdx }) =
-    D.keys namesIdx
+
+--names : Document -> List LocatedName
+--names (Document { cells }) =
+--    D.keys cells
+--eval : Document -> Dict LocatedName ValueOrError
+--eval doc =
+--    List.foldl
+--        (\name memo -> T.second <| evalCell name memo doc)
+--        D.empty
+--        (names doc)
 
 
-evalAll : Document -> Dict Name ValueOrError
-evalAll doc =
-    List.foldl
-        (\name memo -> Tuple.second <| eval name memo doc)
-        D.empty
-        (names doc)
+get : Name -> Name -> Document -> ValueOrError
+get sheet name doc =
+    evalCell ( sheet, name ) D.empty doc |> T.first
 
 
-eval : Name -> Memo -> Document -> ( ValueOrError, Memo )
-eval name memo doc =
+evalCell : LocatedName -> Memo -> Document -> ( ValueOrError, Memo )
+evalCell name memo doc =
     evalHelp [] name memo doc
 
 
-evalHelp : List Name -> Name -> Memo -> Document -> ( ValueOrError, Memo )
+evalHelp : List LocatedName -> LocatedName -> Memo -> Document -> ( ValueOrError, Memo )
 evalHelp ancestors name memo_ doc =
     let
         intBinaryOperator f memo errMsg x y =
@@ -200,16 +254,13 @@ evalHelp ancestors name memo_ doc =
                     intBinaryOperator (-) memo "(-) works only on IntValue" x y
 
                 Reference refName ->
-                    evalHelp (name :: ancestors) refName memo doc
+                    evalHelp (name :: ancestors) ( T.first name, refName ) memo doc
 
-        (Document { namesIdx, sources }) =
+        (Document { cells }) =
             doc
 
         memoize ( v, m ) =
             ( v, D.insert name v m )
-
-        getSource id =
-            D.get id sources |> R.fromMaybe (UndefinedIdError id)
     in
     if List.member name ancestors then
         ( Err <| CyclicReferenceError ancestors, memo_ )
@@ -220,9 +271,8 @@ evalHelp ancestors name memo_ doc =
                 ( v, memo_ )
 
             Nothing ->
-                D.get name namesIdx
+                source (T.first name) (T.second name) doc
                     |> R.fromMaybe (UndefinedNameError name)
-                    |> R.andThen getSource
                     |> R.andThen parse
                     |> R.map (evalAst memo_)
                     |> (\ast_ ->
@@ -303,7 +353,7 @@ expression =
 expressionHelp : List ( Operator, AST ) -> AST -> Parser AST
 expressionHelp reversedOps expr =
     oneOf
-        [ succeed Tuple.pair
+        [ succeed T.pair
             |. spaces
             |= operator
             |. spaces

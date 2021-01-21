@@ -12,10 +12,10 @@ import Test exposing (..)
 suite : Test
 suite =
     let
-        expectValue val ( res, _ ) =
+        expectValue val res =
             Expect.equal res (Ok val)
 
-        expectError val ( res, _ ) =
+        expectError val res =
             Expect.equal res (Err val)
     in
     describe "Document"
@@ -23,115 +23,149 @@ suite =
             [ test "is idempotent" <|
                 \_ ->
                     Expect.equal
-                        (empty |> insert "a" "qwe")
-                        (empty |> insert "a" "qwe" |> insert "a" "qwe")
+                        (empty |> insert "sheet" "a" "qwe")
+                        (empty |> insert "sheet" "a" "qwe" |> insert "sheet" "a" "qwe")
             ]
         , describe "source"
             [ test "retrieves the source of a cell" <|
                 \_ ->
                     Expect.equal
-                        (empty |> insert "a" "src" |> source "a")
+                        (empty |> insert "sheet" "a" "src" |> source "sheet" "a")
                         (Just "src")
             , test "returns Nothing when the cell is not set" <|
                 \_ ->
                     Expect.equal
-                        (empty |> source "a")
+                        (empty |> source "sheet" "a")
                         Nothing
             ]
-        , describe "eval"
+        , describe "sheets"
+            [ test "returns all sheets" <|
+                \_ -> Expect.equal (sheets <| singleSheet "sheet") [ "sheet" ]
+            ]
+        , describe "insertSheet"
+            [ test "should insert a sheet" <|
+                \_ ->
+                    Expect.equal
+                        (singleSheet "sheet" |> insertSheet "toto" |> sheets)
+                        [ "sheet", "toto" ]
+            , test "is idempotent" <|
+                \_ ->
+                    Expect.equal
+                        (empty |> insertSheet "sheet")
+                        (empty |> insertSheet "sheet" |> insertSheet "sheet")
+            ]
+        , describe "removeSheet"
+            [ test "removes a given sheet" <|
+                \_ ->
+                    Expect.equal
+                        (singleSheet "sheet"
+                            |> insertSheet "toto"
+                            |> removeSheet "sheet"
+                            |> sheets
+                        )
+                        [ "toto" ]
+            , test "removes the sheet's cells" <|
+                \_ ->
+                    expectError (UndefinedNameError ( "sheet", "a" ))
+                        (empty
+                            |> insert "sheet" "a" "1"
+                            |> removeSheet "sheet"
+                            |> get "sheet" "a"
+                        )
+            , test "does not removes the other sheets' cells" <|
+                \_ ->
+                    expectValue (StringValue "1")
+                        (singleSheet "sheet"
+                            |> insert "other sheet" "a" "1"
+                            |> get "other sheet" "a"
+                        )
+            , test "is idempotent" <|
+                \_ ->
+                    Expect.equal
+                        (singleSheet "sheet"
+                            |> insertSheet "toto"
+                            |> removeSheet "sheet"
+                            |> removeSheet "sheet"
+                            |> sheets
+                        )
+                        (singleSheet "sheet"
+                            |> insertSheet "toto"
+                            |> removeSheet "sheet"
+                            |> sheets
+                        )
+            ]
+        , describe "get"
             [ test "empty value" <|
                 \_ ->
-                    expectError (UndefinedNameError "a")
-                        (eval "a" D.empty empty)
+                    expectError (UndefinedNameError ( "sheet", "a" ))
+                        (singleSheet "sheet" |> get "sheet" "a")
             , test "single value" <|
                 \_ ->
                     expectValue (StringValue "1")
-                        (eval "a" D.empty <| fromList [ ( "a", "1" ) ])
+                        (fromList "sheet" [ ( "a", "1" ) ] |> get "sheet" "a")
             , test "simple formula" <|
                 \_ ->
                     expectValue (IntValue -7)
-                        (eval "a" D.empty <| fromList [ ( "a", "=1+1-10+1" ) ])
+                        (get "sheet" "a" <| fromList "sheet" [ ( "a", "=1+1-10+1" ) ])
             , fuzz (tuple ( int, int )) "Fuzzing substraction" <|
                 \( i, j ) ->
                     let
                         doc =
-                            fromList [ ( "a", String.concat [ "=", String.fromInt i, "-", String.fromInt j ] ) ]
+                            fromList "sheet" [ ( "a", String.concat [ "=", String.fromInt i, "-", String.fromInt j ] ) ]
                     in
-                    expectValue (IntValue (i - j)) (eval "a" D.empty doc)
+                    expectValue (IntValue (i - j)) (get "sheet" "a" doc)
             , fuzz (tuple ( int, int )) "Fuzzing addition" <|
                 \( i, j ) ->
                     let
                         doc =
-                            fromList [ ( "a", String.concat [ "=", String.fromInt i, "+", String.fromInt j ] ) ]
+                            fromList "sheet" [ ( "a", String.concat [ "=", String.fromInt i, "+", String.fromInt j ] ) ]
                     in
-                    expectValue (IntValue (i + j)) (eval "a" D.empty doc)
+                    expectValue (IntValue (i + j)) (get "sheet" "a" doc)
             , test "empty string" <|
                 \_ ->
-                    expectError (UndefinedNameError "a") (eval "a" D.empty <| Debug.log "" <| fromList [ ( "a", "" ) ])
+                    expectError (UndefinedNameError ( "sheet", "a" )) (get "sheet" "a" <| fromList "sheet" [ ( "a", "" ) ])
             , test "simple reference" <|
                 \_ ->
                     let
                         doc =
-                            fromList
+                            fromList "sheet"
                                 [ ( "a", "1" )
                                 , ( "b", "=a" )
                                 ]
                     in
                     expectValue (StringValue "1")
-                        (eval "b" D.empty doc)
+                        (get "sheet" "b" doc)
             , test "cyclic reference" <|
                 \_ ->
                     let
                         doc =
-                            fromList
+                            fromList "sheet"
                                 [ ( "a", "=b" )
                                 , ( "b", "=a" )
                                 ]
                     in
-                    expectError (CyclicReferenceError [ "a", "b" ])
-                        (eval "b" D.empty doc)
-            , test "complex document" <|
-                \_ ->
-                    let
-                        doc =
-                            fromList
-                                [ ( "a", "1" )
-                                , ( "b", "=1" )
-                                , ( "c", "= \"1\" " )
-                                , ( "d", "=a" )
+                    expectError (CyclicReferenceError [ ( "sheet", "a" ), ( "sheet", "b" ) ])
+                        (get "sheet" "b" doc)
+            , describe "complex document" <|
+                let
+                    data =
+                        [ ( "a", "1", Ok (StringValue "1") )
+                        , ( "b", "=1", Ok (IntValue 1) )
+                        , ( "c", "= \"1\" ", Ok (StringValue "1") )
+                        , ( "d", "=a", Ok (StringValue "1") )
+                        , ( "e", "=d+d+1", Err (TypeError "(+) works only on IntValue") )
+                        , ( "f", "=h+1", Err (CyclicReferenceError [ ( "sheet", "g" ), ( "sheet", "h" ), ( "sheet", "f" ) ]) )
+                        , ( "g", "=b+f", Err (CyclicReferenceError [ ( "sheet", "h" ), ( "sheet", "f" ), ( "sheet", "g" ) ]) )
+                        , ( "h", "=g+1", Err (CyclicReferenceError [ ( "sheet", "f" ), ( "sheet", "g" ), ( "sheet", "h" ) ]) )
+                        ]
 
-                                -- type error in reference
-                                , ( "e", "=d+d+1" )
-
-                                -- a more complex cycle
-                                , ( "f", "=h+1" )
-                                , ( "g", "=b+f" )
-                                , ( "h", "=g+1" )
-                                ]
-
-                        expected =
-                            D.fromList
-                                [ ( "a", Ok (StringValue "1") )
-                                , ( "b", Ok (IntValue 1) )
-                                , ( "c", Ok (StringValue "1") )
-                                , ( "d", Ok (StringValue "1") )
-                                , ( "e", Err (TypeError "(+) works only on IntValue") )
-                                , ( "f", Err (CyclicReferenceError [ "g", "h", "f" ]) )
-                                , ( "g", Err (CyclicReferenceError [ "g", "h", "f" ]) )
-                                , ( "h", Err (CyclicReferenceError [ "g", "h", "f" ]) )
-                                ]
-                    in
-                    Expect.equal expected (evalAll doc)
-            , test "memoized values should be used" <|
-                \_ ->
-                    let
-                        value =
-                            IntValue 1
-
-                        memo =
-                            D.singleton "memoized" (Ok value)
-                    in
-                    expectValue value
-                        (eval "memoized" memo empty)
+                    doc =
+                        data |> L.map (\( name, src, res ) -> ( name, src )) |> fromList "sheet"
+                in
+                L.map
+                    (\( name, src, res ) ->
+                        test (name ++ ":" ++ src) (\_ -> Expect.equal (get "sheet" name doc) res)
+                    )
+                    data
             ]
         ]
