@@ -1,6 +1,7 @@
 module Document exposing
     ( Document
     , Error(..)
+    , Name
     , Value(..)
     , ValueOrError
     , empty
@@ -8,11 +9,12 @@ module Document exposing
     , evalAll
     , fromList
     , insert
+    , source
     )
 
 import Char exposing (isUpper)
 import Debug exposing (log)
-import Dict exposing (Dict)
+import Dict as D exposing (Dict)
 import Maybe as M
 import Parser exposing ((|.), (|=), Parser, andThen, backtrackable, end, int, lazy, map, oneOf, spaces, succeed, symbol, variable)
 import Result as R
@@ -74,8 +76,8 @@ next (Serial id) =
 empty : Document
 empty =
     Document
-        { namesIdx = Dict.empty
-        , sources = Dict.empty
+        { namesIdx = D.empty
+        , sources = D.empty
         , serial = Serial 0
         }
 
@@ -93,7 +95,7 @@ insert name value doc =
         _ ->
             let
                 ( id, newSerial ) =
-                    case Dict.get name namesIdx of
+                    case D.get name namesIdx of
                         Nothing ->
                             next serial
 
@@ -101,8 +103,8 @@ insert name value doc =
                             ( id_, serial )
             in
             Document
-                { namesIdx = Dict.insert name id namesIdx
-                , sources = Dict.insert id value sources
+                { namesIdx = D.insert name id namesIdx
+                , sources = D.insert id value sources
                 , serial = newSerial
                 }
 
@@ -113,15 +115,15 @@ remove name doc =
         (Document dict) =
             doc
     in
-    case Dict.get name dict.namesIdx of
+    case D.get name dict.namesIdx of
         Nothing ->
             doc
 
         Just id ->
             Document
                 { dict
-                    | sources = Dict.remove id dict.sources
-                    , namesIdx = Dict.remove name dict.namesIdx
+                    | sources = D.remove id dict.sources
+                    , namesIdx = D.remove name dict.namesIdx
                 }
 
 
@@ -130,20 +132,26 @@ fromList pairs =
     List.foldl (\( a, b ) -> insert a b) empty pairs
 
 
+source : Name -> Document -> Maybe String
+source name (Document { sources, namesIdx }) =
+    D.get name namesIdx
+        |> M.andThen (\id -> D.get id sources)
+
+
 type alias Memo =
     Dict Name ValueOrError
 
 
 names : Document -> List Name
 names (Document { namesIdx }) =
-    Dict.keys namesIdx
+    D.keys namesIdx
 
 
 evalAll : Document -> Dict Name ValueOrError
 evalAll doc =
     List.foldl
         (\name memo -> Tuple.second <| eval name memo doc)
-        Dict.empty
+        D.empty
         (names doc)
 
 
@@ -198,21 +206,21 @@ evalHelp ancestors name memo_ doc =
             doc
 
         memoize ( v, m ) =
-            ( v, Dict.insert name v m )
+            ( v, D.insert name v m )
 
         getSource id =
-            Dict.get id sources |> R.fromMaybe (UndefinedIdError id)
+            D.get id sources |> R.fromMaybe (UndefinedIdError id)
     in
     if List.member name ancestors then
         ( Err <| CyclicReferenceError ancestors, memo_ )
 
     else
-        case Dict.get name memo_ of
+        case D.get name memo_ of
             Just v ->
                 ( v, memo_ )
 
             Nothing ->
-                Dict.get name namesIdx
+                D.get name namesIdx
                     |> R.fromMaybe (UndefinedNameError name)
                     |> R.andThen getSource
                     |> R.andThen parse

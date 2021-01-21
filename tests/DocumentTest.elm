@@ -26,6 +26,18 @@ suite =
                         (empty |> insert "a" "qwe")
                         (empty |> insert "a" "qwe" |> insert "a" "qwe")
             ]
+        , describe "source"
+            [ test "retrieves the source of a cell" <|
+                \_ ->
+                    Expect.equal
+                        (empty |> insert "a" "src" |> source "a")
+                        (Just "src")
+            , test "returns Nothing when the cell is not set" <|
+                \_ ->
+                    Expect.equal
+                        (empty |> source "a")
+                        Nothing
+            ]
         , describe "eval"
             [ test "empty value" <|
                 \_ ->
