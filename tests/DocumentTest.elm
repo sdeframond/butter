@@ -3,7 +3,9 @@ module DocumentTest exposing (..)
 import Dict as D
 import Document exposing (..)
 import Expect exposing (Expectation)
-import Fuzz exposing (Fuzzer, int, list, string)
+import Fuzz exposing (Fuzzer, int, list, string, tuple)
+import List as L
+import String as S
 import Test exposing (..)
 
 
@@ -29,7 +31,7 @@ suite =
                 \_ ->
                     expectError (UndefinedNameError "a")
                         (eval "a" D.empty empty)
-            , test "simgle value" <|
+            , test "single value" <|
                 \_ ->
                     expectValue (StringValue "1")
                         (eval "a" D.empty <| fromList [ ( "a", "1" ) ])
@@ -37,6 +39,23 @@ suite =
                 \_ ->
                     expectValue (IntValue -7)
                         (eval "a" D.empty <| fromList [ ( "a", "=1+1-10+1" ) ])
+            , fuzz (tuple ( int, int )) "Fuzzing substraction" <|
+                \( i, j ) ->
+                    let
+                        doc =
+                            fromList [ ( "a", String.concat [ "=", String.fromInt i, "-", String.fromInt j ] ) ]
+                    in
+                    expectValue (IntValue (i - j)) (eval "a" D.empty doc)
+            , fuzz (tuple ( int, int )) "Fuzzing addition" <|
+                \( i, j ) ->
+                    let
+                        doc =
+                            fromList [ ( "a", String.concat [ "=", String.fromInt i, "+", String.fromInt j ] ) ]
+                    in
+                    expectValue (IntValue (i + j)) (eval "a" D.empty doc)
+            , test "empty string" <|
+                \_ ->
+                    expectError (UndefinedNameError "a") (eval "a" D.empty <| Debug.log "" <| fromList [ ( "a", "" ) ])
             , test "simple reference" <|
                 \_ ->
                     let

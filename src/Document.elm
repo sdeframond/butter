@@ -81,21 +81,48 @@ empty =
 
 
 insert : String -> String -> Document -> Document
-insert name value (Document { sources, namesIdx, serial }) =
+insert name value doc =
     let
-        ( id, newSerial ) =
-            case Dict.get name namesIdx of
-                Nothing ->
-                    next serial
-
-                Just id_ ->
-                    ( id_, serial )
+        (Document { sources, namesIdx, serial }) =
+            doc
     in
-    Document
-        { namesIdx = Dict.insert name id namesIdx
-        , sources = Dict.insert id value sources
-        , serial = newSerial
-        }
+    case value of
+        "" ->
+            remove name doc
+
+        _ ->
+            let
+                ( id, newSerial ) =
+                    case Dict.get name namesIdx of
+                        Nothing ->
+                            next serial
+
+                        Just id_ ->
+                            ( id_, serial )
+            in
+            Document
+                { namesIdx = Dict.insert name id namesIdx
+                , sources = Dict.insert id value sources
+                , serial = newSerial
+                }
+
+
+remove : String -> Document -> Document
+remove name doc =
+    let
+        (Document dict) =
+            doc
+    in
+    case Dict.get name dict.namesIdx of
+        Nothing ->
+            doc
+
+        Just id ->
+            Document
+                { dict
+                    | sources = Dict.remove id dict.sources
+                    , namesIdx = Dict.remove name dict.namesIdx
+                }
 
 
 fromList : List ( String, String ) -> Document
@@ -128,18 +155,24 @@ eval name memo doc =
 evalHelp : List Name -> Name -> Memo -> Document -> ( ValueOrError, Memo )
 evalHelp ancestors name memo_ doc =
     let
-        evalBinaryOp memo x y f =
+        intBinaryOperator f memo errMsg x y =
             let
-                ( xVal, xMemo ) =
+                ( xRes, xMemo ) =
                     evalAst memo x
 
-                ( yVal, yMemo ) =
+                ( yRes, yMemo ) =
                     evalAst xMemo y
 
+                applyOp xVal yVal =
+                    case ( xVal, yVal ) of
+                        ( IntValue i, IntValue j ) ->
+                            Ok <| IntValue (f i j)
+
+                        _ ->
+                            Err <| TypeError errMsg
+
                 res =
-                    R.andThen
-                        (\xx -> R.andThen (\yy -> f xx yy) yVal)
-                        xVal
+                    R.andThen (\xx -> R.andThen (\yy -> applyOp xx yy) yRes) xRes
             in
             ( res, yMemo )
 
@@ -153,32 +186,10 @@ evalHelp ancestors name memo_ doc =
                     ( Ok <| StringValue s, memo )
 
                 Plus x y ->
-                    evalBinaryOp
-                        memo
-                        x
-                        y
-                        (\xVal yVal ->
-                            case ( xVal, yVal ) of
-                                ( IntValue i, IntValue j ) ->
-                                    Ok <| IntValue (i + j)
-
-                                _ ->
-                                    Err <| TypeError "(+) works only on IntValue"
-                        )
+                    intBinaryOperator (+) memo "(+) works only on IntValue" x y
 
                 Minus x y ->
-                    evalBinaryOp
-                        memo
-                        x
-                        y
-                        (\xVal yVal ->
-                            case ( xVal, yVal ) of
-                                ( IntValue i, IntValue j ) ->
-                                    Ok <| IntValue (i - j)
-
-                                _ ->
-                                    Err <| TypeError "(-) works only on IntValue"
-                        )
+                    intBinaryOperator (-) memo "(-) works only on IntValue" x y
 
                 Reference refName ->
                     evalHelp (name :: ancestors) refName memo doc
@@ -252,11 +263,21 @@ reference =
             }
 
 
+myInt : Parser Int
+myInt =
+    oneOf
+        [ succeed negate
+            |. symbol "-"
+            |= int
+        , int
+        ]
+
+
 term : Parser AST
 term =
     succeed identity
         |= oneOf
-            [ map IntLiteral int
+            [ map IntLiteral myInt
             , succeed StringLiteral
                 |. symbol "\""
                 |= variable { start = \c -> True, inner = \c -> c /= '"', reserved = Set.empty }
