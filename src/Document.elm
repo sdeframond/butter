@@ -21,7 +21,7 @@ import Dict as D exposing (Dict)
 import List as L
 import Maybe as M
 import OrderedDict as OD exposing (OrderedDict)
-import Parser exposing ((|.), (|=), Parser, andThen, backtrackable, end, int, lazy, map, oneOf, spaces, succeed, symbol, variable)
+import Parser as P exposing ((|.), (|=), Parser, backtrackable, end, int, lazy, map, oneOf, spaces, succeed, symbol, variable)
 import Result as R
 import Set exposing (Set)
 import Tuple as T
@@ -33,11 +33,12 @@ type AST
     | Minus AST AST
     | IntLiteral Int
     | StringLiteral String
-    | Reference Name
+    | RelativeReference Name
+    | AbsoluteReference Name Name
 
 
 type Error
-    = ParsingError (List Parser.DeadEnd)
+    = ParsingError (List P.DeadEnd)
     | UndefinedNameError LocatedName
     | UndefinedIdError Id
     | TypeError String
@@ -253,8 +254,11 @@ evalHelp ancestors name memo_ doc =
                 Minus x y ->
                     intBinaryOperator (-) memo "(-) works only on IntValue" x y
 
-                Reference refName ->
-                    evalHelp (name :: ancestors) ( T.first name, refName ) memo doc
+                RelativeReference cellName ->
+                    evalHelp (name :: ancestors) ( T.first name, cellName ) memo doc
+
+                AbsoluteReference sheetName cellName ->
+                    evalHelp (name :: ancestors) ( sheetName, cellName ) memo doc
 
         (Document { cells }) =
             doc
@@ -288,7 +292,7 @@ evalHelp ancestors name memo_ doc =
 
 parse : String -> Result Error AST
 parse s =
-    Parser.run root s |> R.mapError ParsingError
+    P.run root s |> R.mapError ParsingError
 
 
 root : Parser AST
@@ -311,14 +315,29 @@ root =
         ]
 
 
+nameParser =
+    variable
+        { start = Char.isAlpha
+        , inner = Char.isAlphaNum
+        , reserved = Set.empty
+        }
+
+
 reference : Parser AST
 reference =
-    succeed Reference
-        |= variable
-            { start = Char.isAlpha
-            , inner = Char.isAlphaNum
-            , reserved = Set.empty
-            }
+    succeed identity
+        |= nameParser
+        |> P.andThen referenceHelp
+
+
+referenceHelp : String -> Parser AST
+referenceHelp name =
+    oneOf
+        [ succeed (AbsoluteReference name)
+            |. symbol "."
+            |= nameParser
+        , succeed (RelativeReference name)
+        ]
 
 
 myInt : Parser Int
@@ -347,7 +366,7 @@ term =
 
 expression : Parser AST
 expression =
-    term |> andThen (expressionHelp [])
+    term |> P.andThen (expressionHelp [])
 
 
 expressionHelp : List ( Operator, AST ) -> AST -> Parser AST
@@ -358,7 +377,7 @@ expressionHelp reversedOps expr =
             |= operator
             |. spaces
             |= term
-            |> andThen (\( op, newExpr ) -> expressionHelp (( op, expr ) :: reversedOps) newExpr)
+            |> P.andThen (\( op, newExpr ) -> expressionHelp (( op, expr ) :: reversedOps) newExpr)
         , lazy (\_ -> succeed <| finalize reversedOps expr)
         ]
 

@@ -111,19 +111,22 @@ suite =
                 \( i, j ) ->
                     let
                         doc =
-                            fromList "sheet" [ ( "a", String.concat [ "=", String.fromInt i, "-", String.fromInt j ] ) ]
+                            fromList "sheet"
+                                [ ( "a", String.concat [ "=", String.fromInt i, "-", String.fromInt j ] ) ]
                     in
                     expectValue (IntValue (i - j)) (get "sheet" "a" doc)
             , fuzz (tuple ( int, int )) "Fuzzing addition" <|
                 \( i, j ) ->
                     let
                         doc =
-                            fromList "sheet" [ ( "a", String.concat [ "=", String.fromInt i, "+", String.fromInt j ] ) ]
+                            fromList "sheet"
+                                [ ( "a", String.concat [ "=", String.fromInt i, "+", String.fromInt j ] ) ]
                     in
                     expectValue (IntValue (i + j)) (get "sheet" "a" doc)
             , test "empty string" <|
                 \_ ->
-                    expectError (UndefinedNameError ( "sheet", "a" )) (get "sheet" "a" <| fromList "sheet" [ ( "a", "" ) ])
+                    expectError (UndefinedNameError ( "sheet", "a" ))
+                        (get "sheet" "a" <| fromList "sheet" [ ( "a", "" ) ])
             , test "simple reference" <|
                 \_ ->
                     let
@@ -146,6 +149,10 @@ suite =
                     in
                     expectError (CyclicReferenceError [ ( "sheet", "a" ), ( "sheet", "b" ) ])
                         (get "sheet" "b" doc)
+            , test "absolute reference" <|
+                \_ ->
+                    expectValue (StringValue "1")
+                        (fromList "sheet1" [ ( "a", "=sheet2.b" ) ] |> insert "sheet2" "b" "1" |> get "sheet1" "a")
             , describe "complex document" <|
                 let
                     data =
@@ -154,9 +161,36 @@ suite =
                         , ( "c", "= \"1\" ", Ok (StringValue "1") )
                         , ( "d", "=a", Ok (StringValue "1") )
                         , ( "e", "=d+d+1", Err (TypeError "(+) works only on IntValue") )
-                        , ( "f", "=h+1", Err (CyclicReferenceError [ ( "sheet", "g" ), ( "sheet", "h" ), ( "sheet", "f" ) ]) )
-                        , ( "g", "=b+f", Err (CyclicReferenceError [ ( "sheet", "h" ), ( "sheet", "f" ), ( "sheet", "g" ) ]) )
-                        , ( "h", "=g+1", Err (CyclicReferenceError [ ( "sheet", "f" ), ( "sheet", "g" ), ( "sheet", "h" ) ]) )
+                        , ( "f"
+                          , "=h+1"
+                          , Err
+                                (CyclicReferenceError
+                                    [ ( "sheet", "g" )
+                                    , ( "sheet", "h" )
+                                    , ( "sheet", "f" )
+                                    ]
+                                )
+                          )
+                        , ( "g"
+                          , "=b+f"
+                          , Err
+                                (CyclicReferenceError
+                                    [ ( "sheet", "h" )
+                                    , ( "sheet", "f" )
+                                    , ( "sheet", "g" )
+                                    ]
+                                )
+                          )
+                        , ( "h"
+                          , "=g+1"
+                          , Err
+                                (CyclicReferenceError
+                                    [ ( "sheet", "f" )
+                                    , ( "sheet", "g" )
+                                    , ( "sheet", "h" )
+                                    ]
+                                )
+                          )
                         ]
 
                     doc =
