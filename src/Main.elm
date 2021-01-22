@@ -4,6 +4,7 @@ module Main exposing (..)
 
 import Browser
 import Css exposing (..)
+import Css.Global as Global
 import Dict as D exposing (Dict)
 import Document as Doc exposing (Name, Value(..), ValueOrError)
 import Html
@@ -141,7 +142,7 @@ updateModel msg model =
                         }
 
         EditSheet name ->
-            model
+            Debug.todo "Sheet name edition"
 
 
 
@@ -165,7 +166,16 @@ view : Model -> Browser.Document Msg
 view model =
     { title = "Butter Spreadsheet"
     , body =
-        [ tableView model |> toUnstyled
+        [ Global.global
+            [ Global.html [ height (pct 100) ]
+            , Global.body
+                [ displayFlex
+                , flexDirection column
+                , height (pct 100)
+                ]
+            ]
+            |> toUnstyled
+        , tableView model |> toUnstyled
         , sheetSelector model |> toUnstyled
         ]
     }
@@ -174,6 +184,12 @@ view model =
 tableView : Model -> Html Msg
 tableView model =
     let
+        numberOfRow =
+            40
+
+        numberOfColumns =
+            10
+
         valueToString val =
             case val of
                 Err e ->
@@ -196,7 +212,7 @@ tableView model =
             Char.fromCode (i - 1 + Char.toCode 'A') |> S.fromChar
 
         mapColumns f =
-            L.range 1 26 |> L.map f
+            L.range 1 numberOfColumns |> L.map f
 
         blueGrey =
             rgb 220 220 240
@@ -206,6 +222,7 @@ tableView model =
                 [ backgroundColor blueGrey
                 , padding2 (Css.em 0.2) (Css.em 0.4)
                 , border3 (px 1) solid (rgb 150 150 150)
+                , position sticky
                 ]
 
         columnHeaders =
@@ -213,12 +230,12 @@ tableView model =
                 (th [] []
                     :: mapColumns
                         (\col ->
-                            myTh [] [ text <| toLetter col ]
+                            myTh [ css [ top (px 0) ] ] [ text <| toLetter col ]
                         )
                 )
 
         rowHeader row =
-            myTh [] [ text <| S.fromInt row ]
+            myTh [ css [ left (px 0) ] ] [ text <| S.fromInt row ]
 
         cell row col =
             let
@@ -259,7 +276,7 @@ tableView model =
                 ]
 
         rows =
-            L.range 1 30
+            L.range 1 numberOfRow
                 |> L.map
                     (\row ->
                         tr [] <|
