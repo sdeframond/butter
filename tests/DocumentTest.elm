@@ -5,6 +5,7 @@ import Document exposing (..)
 import Expect exposing (Expectation)
 import Fuzz exposing (Fuzzer, int, list, string, tuple)
 import List as L
+import Result as R
 import String as S
 import Test exposing (..)
 
@@ -101,6 +102,43 @@ suite =
                             |> insertSheet "toto"
                             |> removeSheet "sheet"
                             |> sheets
+                        )
+            ]
+        , describe "renameSheet"
+            [ test "it renames a sheet" <|
+                \_ ->
+                    Expect.equal (Ok [ "renamed" ])
+                        (singleSheet "sheet"
+                            |> renameSheet "sheet" "renamed"
+                            |> R.map sheets
+                        )
+            , test "it renames only if the sheet exists" <|
+                \_ ->
+                    Expect.equal (Ok [ "sheet" ])
+                        (singleSheet "sheet"
+                            |> renameSheet "doesNotExist" "renamed"
+                            |> R.map sheets
+                        )
+            , test "it renames only one sheet" <|
+                \_ ->
+                    Expect.equal (Ok [ "sheet1", "renamed", "sheet3" ])
+                        (singleSheet "sheet1"
+                            |> insertSheet "sheet2"
+                            |> insertSheet "sheet3"
+                            |> renameSheet "sheet2" "renamed"
+                            |> R.map sheets
+                        )
+            , test "it enforces name unicity" <|
+                \_ ->
+                    Expect.equal (Err DuplicateSheetNameError)
+                        (singleSheet "sheet"
+                            |> renameSheet "sheet" "sheet"
+                        )
+            , test "it enforces name format" <|
+                \_ ->
+                    Expect.equal (Err InvalidSheetNameError)
+                        (singleSheet "sheet"
+                            |> renameSheet "sheet" "not a valid sheet name"
                         )
             ]
         , describe "get"

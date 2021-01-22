@@ -2,6 +2,7 @@ module Document exposing
     ( Document
     , Error(..)
     , Name
+    , SheetError(..)
     , Value(..)
     , ValueOrError
     , empty
@@ -10,6 +11,7 @@ module Document exposing
     , insert
     , insertSheet
     , removeSheet
+    , renameSheet
     , sheets
     , singleSheet
     , source
@@ -151,6 +153,38 @@ removeSheet name (Document d) =
                     | sheetIds = OD.remove name d.sheetIds
                     , cells = d.cells |> D.filter (\( id_, _ ) _ -> id /= id_)
                 }
+
+
+type SheetError
+    = InvalidSheetNameError
+    | DuplicateSheetNameError
+
+
+renameSheet : Name -> Name -> Document -> Result SheetError Document
+renameSheet name newName_ (Document d) =
+    if OD.member newName_ d.sheetIds then
+        Err DuplicateSheetNameError
+
+    else
+        case P.run (nameParser |. end) newName_ of
+            Ok newName ->
+                let
+                    rename_ ( n, id ) =
+                        if n == name then
+                            ( newName, id )
+
+                        else
+                            ( n, id )
+                in
+                Ok <|
+                    Document
+                        { d
+                            | sheetIds =
+                                d.sheetIds |> OD.toList |> L.map rename_ |> OD.fromList
+                        }
+
+            Err _ ->
+                Err InvalidSheetNameError
 
 
 insert : Name -> Name -> String -> Document -> Document

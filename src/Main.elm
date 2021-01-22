@@ -35,7 +35,7 @@ main =
 
 type alias Model =
     { doc : Doc.Document
-    , edit : Maybe ( Col, Row )
+    , edit : EditStatus
     , currentSheet : Name
     , sheetCounter : Int
     }
@@ -44,7 +44,7 @@ type alias Model =
 type EditStatus
     = NotEditing
     | EditingSheet Name String
-    | EditingCell ( Name, Name ) String
+    | EditingCell ( Col, Row )
 
 
 type alias Col =
@@ -71,7 +71,7 @@ initModel =
     { doc = Doc.singleSheet "Sheet1"
     , currentSheet = "Sheet1"
     , sheetCounter = 2
-    , edit = Nothing
+    , edit = NotEditing
     }
 
 
@@ -88,6 +88,7 @@ type Msg
     | SelectSheet Name
     | RemoveSheet Name
     | EditSheet Name
+    | UpdateSheetName Name
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -97,9 +98,23 @@ update msg model =
 
 updateModel : Msg -> Model -> Model
 updateModel msg model =
+    let
+        commitEdit =
+            case model.edit of
+                EditingSheet oldName newName ->
+                    { model
+                        | edit = NotEditing
+                        , doc =
+                            Doc.renameSheet oldName newName model.doc
+                                |> R.withDefault model.doc
+                    }
+
+                _ ->
+                    model
+    in
     case Debug.log "update msg" msg of
         EditCell col row ->
-            { model | edit = Just ( col, row ) }
+            { commitEdit | edit = EditingCell ( col, row ) }
 
         UpdateSource name src ->
             { model | doc = Doc.insert model.currentSheet name src model.doc }
@@ -115,7 +130,7 @@ updateModel msg model =
 
         SelectSheet name ->
             if L.member name (Doc.sheets model.doc) then
-                { model | currentSheet = name }
+                { commitEdit | currentSheet = name }
 
             else
                 model
@@ -123,7 +138,7 @@ updateModel msg model =
         RemoveSheet name ->
             let
                 doc =
-                    Doc.removeSheet name model.doc
+                    Doc.removeSheet name commitEdit.doc
             in
             case Doc.sheets doc of
                 [] ->
@@ -131,18 +146,29 @@ updateModel msg model =
 
                 head :: rest ->
                     Debug.log ""
-                        { model
+                        { commitEdit
                             | doc = doc
                             , currentSheet =
-                                if L.member model.currentSheet rest then
-                                    model.currentSheet
+                                if L.member commitEdit.currentSheet rest then
+                                    commitEdit.currentSheet
 
                                 else
                                     head
                         }
 
         EditSheet name ->
-            Debug.todo "Sheet name edition"
+            { commitEdit | edit = EditingSheet name name }
+
+        UpdateSheetName name ->
+            { model
+                | edit =
+                    case model.edit of
+                        EditingSheet oldName _ ->
+                            EditingSheet oldName name
+
+                        _ ->
+                            model.edit
+            }
 
 
 
@@ -264,15 +290,15 @@ tableView model =
                 , onClick <| EditCell col row
                 ]
                 [ case model.edit of
-                    Nothing ->
-                        defaultCell
-
-                    Just coord ->
+                    EditingCell coord ->
                         if coord == ( col, row ) then
                             editCell
 
                         else
                             defaultCell
+
+                    _ ->
+                        defaultCell
                 ]
 
         rows =
@@ -300,21 +326,35 @@ sheetSelector model =
                 ]
 
         sheetItem name =
-            li
-                [ itemCss
-                , css
-                    [ if name == model.currentSheet then
-                        fontWeight bold
+            let
+                defaultItem =
+                    li
+                        [ itemCss
+                        , css
+                            [ if name == model.currentSheet then
+                                fontWeight bold
 
-                      else
-                        fontWeight normal
-                    ]
-                , onClick <| SelectSheet name
-                , onDoubleClick <| EditSheet name
-                ]
-                [ text name
-                , span [ onClick <| RemoveSheet name ] [ text "[x]" ]
-                ]
+                              else
+                                fontWeight normal
+                            ]
+                        , onClick <| SelectSheet name
+                        , onDoubleClick <| EditSheet name
+                        ]
+                        [ text name
+                        , span [ onClick <| RemoveSheet name ] [ text "[x]" ]
+                        ]
+            in
+            case model.edit of
+                EditingSheet oldName newName ->
+                    if oldName == name then
+                        li [ itemCss ]
+                            [ input [ value newName, onInput UpdateSheetName ] [] ]
+
+                    else
+                        defaultItem
+
+                _ ->
+                    defaultItem
 
         addSheet =
             li
