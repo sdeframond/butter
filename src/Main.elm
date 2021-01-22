@@ -67,14 +67,7 @@ init flags =
 
 initModel : Model
 initModel =
-    { doc =
-        Doc.fromList "Sheet1"
-            [ ( "A1", "=1+\"a\"" )
-            , ( "A2", "=A1+1" )
-            , ( "A3", "=A4" )
-            , ( "A4", "=A3" )
-            , ( "A5", "=A32" )
-            ]
+    { doc = Doc.singleSheet "Sheet1"
     , currentSheet = "Sheet1"
     , sheetCounter = 2
     , edit = Nothing
@@ -203,16 +196,29 @@ tableView model =
             Char.fromCode (i - 1 + Char.toCode 'A') |> S.fromChar
 
         mapColumns f =
-            L.range 1 10 |> L.map f
+            L.range 1 26 |> L.map f
 
         blueGrey =
             rgb 220 220 240
 
+        myTh =
+            styled th
+                [ backgroundColor blueGrey
+                , padding2 (Css.em 0.2) (Css.em 0.4)
+                , border3 (px 1) solid (rgb 150 150 150)
+                ]
+
         columnHeaders =
-            tr [ css [ backgroundColor blueGrey ] ] (th [] [] :: mapColumns (\col -> th [] [ text <| toLetter col ]))
+            tr []
+                (th [] []
+                    :: mapColumns
+                        (\col ->
+                            myTh [] [ text <| toLetter col ]
+                        )
+                )
 
         rowHeader row =
-            th [ css [ backgroundColor blueGrey, padding2 (Css.em 0.2) (Css.em 0.4) ] ] [ text <| S.fromInt row ]
+            myTh [] [ text <| S.fromInt row ]
 
         cell row col =
             let
@@ -253,7 +259,7 @@ tableView model =
                 ]
 
         rows =
-            L.range 1 20
+            L.range 1 30
                 |> L.map
                     (\row ->
                         tr [] <|
@@ -262,7 +268,7 @@ tableView model =
                     )
     in
     H.table
-        [ css [ borderCollapse collapse ] ]
+        [ css [ borderCollapse collapse, width (pct 100), display block, overflow scroll ] ]
         (columnHeaders :: rows)
 
 
