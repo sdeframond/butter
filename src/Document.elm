@@ -20,31 +20,25 @@ module Document exposing
 import Char exposing (isUpper)
 import Debug exposing (log)
 import Dict as D exposing (Dict)
+import Document.Parser exposing (AST(..), parseCell, parseName)
 import List as L
 import Maybe as M
 import OrderedDict as OD exposing (OrderedDict)
-import Parser as P exposing ((|.), (|=), Parser, backtrackable, end, int, lazy, map, oneOf, spaces, succeed, symbol, variable)
 import Result as R
 import Set exposing (Set)
 import Tuple as T
-import Types exposing (..)
-
-
-type AST
-    = Plus AST AST
-    | Minus AST AST
-    | IntLiteral Int
-    | StringLiteral String
-    | RelativeReference Name
-    | AbsoluteReference Name Name
 
 
 type Error
-    = ParsingError (List P.DeadEnd)
+    = ParsingError String
     | UndefinedNameError LocatedName
     | UndefinedIdError Id
     | TypeError String
     | CyclicReferenceError (List LocatedName)
+
+
+type alias Id =
+    Int
 
 
 type alias SheetId =
@@ -166,7 +160,7 @@ renameSheet name newName_ (Document d) =
         Err DuplicateSheetNameError
 
     else
-        case P.run (nameParser |. end) newName_ of
+        case parseName newName_ of
             Ok newName ->
                 let
                     rename_ ( n, id ) =
@@ -227,25 +221,13 @@ source sheetName cellName (Document { cells, sheetIds }) =
         |> M.andThen (\id -> D.get ( id, cellName ) cells)
 
 
-type alias Memo =
-    Dict LocatedName ValueOrError
-
-
-
---names : Document -> List LocatedName
---names (Document { cells }) =
---    D.keys cells
---eval : Document -> Dict LocatedName ValueOrError
---eval doc =
---    List.foldl
---        (\name memo -> T.second <| evalCell name memo doc)
---        D.empty
---        (names doc)
-
-
 get : Name -> Name -> Document -> ValueOrError
 get sheet name doc =
     evalCell ( sheet, name ) D.empty doc |> T.first
+
+
+type alias Memo =
+    Dict LocatedName ValueOrError
 
 
 evalCell : LocatedName -> Memo -> Document -> ( ValueOrError, Memo )
@@ -315,7 +297,7 @@ evalHelp ancestors name memo_ doc =
             Nothing ->
                 source (T.first name) (T.second name) doc
                     |> R.fromMaybe (UndefinedNameError name)
-                    |> R.andThen parse
+                    |> R.andThen (parseCell >> R.mapError ParsingError)
                     |> R.map (evalAst memo_)
                     |> (\ast_ ->
                             case ast_ of
@@ -326,121 +308,3 @@ evalHelp ancestors name memo_ doc =
                                     v
                        )
                     |> memoize
-
-
-parse : String -> Result Error AST
-parse s =
-    P.run root s |> R.mapError ParsingError
-
-
-root : Parser AST
-root =
-    let
-        var =
-            variable
-                { start = \c -> c /= '='
-                , inner = \c -> True
-                , reserved = Set.empty
-                }
-    in
-    oneOf
-        [ succeed identity
-            |. symbol "="
-            |. spaces
-            |= expression
-            |. end
-        , map StringLiteral var
-        ]
-
-
-nameParser =
-    variable
-        { start = Char.isAlpha
-        , inner = Char.isAlphaNum
-        , reserved = Set.empty
-        }
-
-
-reference : Parser AST
-reference =
-    succeed identity
-        |= nameParser
-        |> P.andThen referenceHelp
-
-
-referenceHelp : String -> Parser AST
-referenceHelp name =
-    oneOf
-        [ succeed (AbsoluteReference name)
-            |. symbol "."
-            |= nameParser
-        , succeed (RelativeReference name)
-        ]
-
-
-myInt : Parser Int
-myInt =
-    oneOf
-        [ succeed negate
-            |. symbol "-"
-            |= int
-        , int
-        ]
-
-
-term : Parser AST
-term =
-    succeed identity
-        |= oneOf
-            [ map IntLiteral myInt
-            , succeed StringLiteral
-                |. symbol "\""
-                |= variable { start = \c -> True, inner = \c -> c /= '"', reserved = Set.empty }
-                |. symbol "\""
-            , reference
-            ]
-        |. spaces
-
-
-expression : Parser AST
-expression =
-    term |> P.andThen (expressionHelp [])
-
-
-expressionHelp : List ( Operator, AST ) -> AST -> Parser AST
-expressionHelp reversedOps expr =
-    oneOf
-        [ succeed T.pair
-            |. spaces
-            |= operator
-            |. spaces
-            |= term
-            |> P.andThen (\( op, newExpr ) -> expressionHelp (( op, expr ) :: reversedOps) newExpr)
-        , lazy (\_ -> succeed <| finalize reversedOps expr)
-        ]
-
-
-type Operator
-    = PlusOp
-    | MinusOp
-
-
-operator : Parser Operator
-operator =
-    oneOf
-        [ map (\_ -> PlusOp) (symbol "+")
-        , map (\_ -> MinusOp) (symbol "-")
-        ]
-
-
-finalize : List ( Operator, AST ) -> AST -> AST
-finalize reversedOps finalExpr =
-    case reversedOps of
-        [] ->
-            finalExpr
-
-        ( PlusOp, expr ) :: previousOps ->
-            Plus (finalize previousOps expr) finalExpr
-
-        ( MinusOp, expr ) :: previousOps ->
-            Minus (finalize previousOps expr) finalExpr
