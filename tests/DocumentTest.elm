@@ -36,17 +36,15 @@ suite =
                         (sheets doc)
                         (insert "sheet1" "a" "1" doc |> sheets)
             ]
-        , describe "source"
+        , describe "cellSource"
             [ test "retrieves the source of a cell" <|
                 \_ ->
-                    Expect.equal
-                        (empty |> insert "sheet" "a" "src" |> source "sheet" "a")
-                        (Just "src")
-            , test "returns Nothing when the cell is not set" <|
+                    expectValue "src"
+                        (empty |> insert "sheet" "a" "src" |> cellSource "sheet" "a")
+            , test "returns an error when the cell is not set" <|
                 \_ ->
-                    Expect.equal
-                        (empty |> source "sheet" "a")
-                        Nothing
+                    expectError (UndefinedSheetError "sheet")
+                        (empty |> cellSource "sheet" "a")
             ]
         , describe "sheets"
             [ test "returns all sheets" <|
@@ -74,14 +72,6 @@ suite =
                             |> sheets
                         )
                         [ "toto" ]
-            , test "removes the sheet's cells" <|
-                \_ ->
-                    expectError (UndefinedNameError ( "sheet", "a" ))
-                        (empty
-                            |> insert "sheet" "a" "1"
-                            |> removeSheet "sheet"
-                            |> get "sheet" "a"
-                        )
             , test "does not removes the other sheets' cells" <|
                 \_ ->
                     expectValue (StringValue "1")
@@ -200,6 +190,10 @@ suite =
                 \_ ->
                     expectValue (StringValue "1")
                         (fromList "sheet1" [ ( "a", "=sheet2.b" ) ] |> insert "sheet2" "b" "1" |> get "sheet1" "a")
+            , test "missing sheet" <|
+                \_ ->
+                    expectError (UndefinedSheetError "sheet")
+                        (empty |> get "sheet" "a")
             , describe "complex document" <|
                 let
                     data =

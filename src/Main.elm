@@ -214,7 +214,7 @@ tableView model =
             40
 
         numberOfColumns =
-            10
+            20
 
         valueToString val =
             case val of
@@ -276,7 +276,10 @@ tableView model =
 
                 editCell =
                     input
-                        [ value (Doc.source model.currentSheet name model.doc |> M.withDefault "")
+                        [ value
+                            (Doc.cellSource model.currentSheet name model.doc
+                                |> R.withDefault ""
+                            )
                         , onInput <| UpdateSource name
                         ]
                         []
@@ -311,7 +314,13 @@ tableView model =
                     )
     in
     H.table
-        [ css [ borderCollapse collapse, width (pct 100), display block, overflow scroll ] ]
+        [ css
+            [ borderCollapse collapse
+            , width (pct 100)
+            , display block
+            , overflow scroll
+            ]
+        ]
         (columnHeaders :: rows)
 
 
@@ -341,14 +350,20 @@ sheetSelector model =
                         , onDoubleClick <| EditSheet name
                         ]
                         [ text name
-                        , span [ onClick <| RemoveSheet name ] [ text "[x]" ]
+                        , span [ onClick <| RemoveSheet name ]
+                            [ text "[x]" ]
                         ]
             in
             case model.edit of
                 EditingSheet oldName newName ->
                     if oldName == name then
                         li [ itemCss ]
-                            [ input [ value newName, onInput UpdateSheetName ] [] ]
+                            [ input
+                                [ value newName
+                                , onInput UpdateSheetName
+                                ]
+                                []
+                            ]
 
                     else
                         defaultItem

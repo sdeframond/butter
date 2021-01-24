@@ -5,6 +5,7 @@ module Document exposing
     , SheetError(..)
     , Value(..)
     , ValueOrError
+    , cellSource
     , empty
     , fromList
     , get
@@ -14,13 +15,12 @@ module Document exposing
     , renameSheet
     , sheets
     , singleSheet
-    , source
     )
 
 import Char exposing (isUpper)
 import Debug exposing (log)
 import Dict as D exposing (Dict)
-import Document.Parser exposing (AST(..), parseCell, parseName)
+import Document.AST as AST exposing (AST(..), FormulaAST(..), parseCell, parseName)
 import List as L
 import Maybe as M
 import OrderedDict as OD exposing (OrderedDict)
@@ -30,8 +30,9 @@ import Tuple as T
 
 
 type Error
-    = ParsingError String
+    = ParsingError AST.Error
     | UndefinedNameError LocatedName
+    | UndefinedSheetError Name
     | UndefinedIdError Id
     | TypeError String
     | CyclicReferenceError (List LocatedName)
@@ -62,12 +63,28 @@ type alias ValueOrError =
     Result Error Value
 
 
-type Document
-    = Document
-        { cells : Dict ( SheetId, Name ) String
-        , sheetIds : OrderedDict Name SheetId
-        , serial : Serial
-        }
+type Cell
+    = Cell (Result AST.Error AST)
+
+
+source : Cell -> String
+source (Cell res) =
+    case res of
+        Ok ast ->
+            AST.toString ast
+
+        Err (AST.Error src _) ->
+            src
+
+
+fromSource : String -> Cell
+fromSource src =
+    Cell <| parseCell src
+
+
+parsedCell : Cell -> Result Error AST
+parsedCell (Cell res) =
+    res |> R.mapError ParsingError
 
 
 type Serial
@@ -77,6 +94,14 @@ type Serial
 next : Serial -> ( Id, Serial )
 next (Serial id) =
     ( id, Serial <| id + 1 )
+
+
+type Document
+    = Document
+        { cells : Dict ( SheetId, Name ) Cell
+        , sheetIds : OrderedDict Name SheetId
+        , serial : Serial
+        }
 
 
 empty : Document
@@ -193,7 +218,7 @@ insert sheetName cellName value doc =
 
         _ ->
             Document
-                { d | cells = D.insert ( id, cellName ) value d.cells }
+                { d | cells = D.insert ( id, cellName ) (fromSource value) d.cells }
 
 
 remove : Name -> Name -> Document -> Document
@@ -215,10 +240,21 @@ fromList sheet pairs =
     List.foldl (\( a, b ) -> insert sheet a b) (singleSheet sheet) pairs
 
 
-source : Name -> Name -> Document -> Maybe String
-source sheetName cellName (Document { cells, sheetIds }) =
+getCell : Name -> Name -> Document -> Result Error Cell
+getCell sheetName cellName (Document { cells, sheetIds }) =
     OD.get sheetName sheetIds
-        |> M.andThen (\id -> D.get ( id, cellName ) cells)
+        |> R.fromMaybe (UndefinedSheetError sheetName)
+        |> R.andThen
+            (\id ->
+                D.get ( id, cellName ) cells
+                    |> R.fromMaybe
+                        (UndefinedNameError ( sheetName, cellName ))
+            )
+
+
+cellSource : Name -> Name -> Document -> Result Error String
+cellSource sheetName cellName doc =
+    getCell sheetName cellName doc |> R.map source
 
 
 get : Name -> Name -> Document -> ValueOrError
@@ -241,10 +277,10 @@ evalHelp ancestors name memo_ doc =
         intBinaryOperator f memo errMsg x y =
             let
                 ( xRes, xMemo ) =
-                    evalAst memo x
+                    evalFormulaAst memo x
 
                 ( yRes, yMemo ) =
-                    evalAst xMemo y
+                    evalFormulaAst xMemo y
 
                 applyOp xVal yVal =
                     case ( xVal, yVal ) of
@@ -261,6 +297,15 @@ evalHelp ancestors name memo_ doc =
 
         evalAst : Memo -> AST -> ( ValueOrError, Memo )
         evalAst memo ast =
+            case ast of
+                Formula x ->
+                    evalFormulaAst memo x
+
+                RootLiteral s ->
+                    ( Ok <| StringValue s, memo )
+
+        evalFormulaAst : Memo -> FormulaAST -> ( ValueOrError, Memo )
+        evalFormulaAst memo ast =
             case ast of
                 IntLiteral i ->
                     ( Ok <| IntValue i, memo )
@@ -295,9 +340,8 @@ evalHelp ancestors name memo_ doc =
                 ( v, memo_ )
 
             Nothing ->
-                source (T.first name) (T.second name) doc
-                    |> R.fromMaybe (UndefinedNameError name)
-                    |> R.andThen (parseCell >> R.mapError ParsingError)
+                getCell (T.first name) (T.second name) doc
+                    |> R.andThen parsedCell
                     |> R.map (evalAst memo_)
                     |> (\ast_ ->
                             case ast_ of

@@ -1,28 +1,70 @@
-module Document.Parser exposing (AST(..), parseCell, parseName)
+module Document.AST exposing (AST(..), Error(..), FormulaAST(..), parseCell, parseName, toString)
 
 import Parser as P exposing ((|.), (|=), Parser, backtrackable, end, int, lazy, map, oneOf, spaces, succeed, symbol, variable)
 import Result as R
 import Set
+import String as S
 import Tuple as T
 
 
 type AST
-    = Plus AST AST
-    | Minus AST AST
+    = RootLiteral String
+    | Formula FormulaAST
+
+
+type FormulaAST
+    = Plus FormulaAST FormulaAST
+    | Minus FormulaAST FormulaAST
     | IntLiteral Int
     | StringLiteral String
     | RelativeReference String
     | AbsoluteReference String String
 
 
-parseCell : String -> Result String AST
+type Error
+    = Error String (List P.DeadEnd)
+
+
+toString : AST -> String
+toString ast =
+    case ast of
+        Formula ast_ ->
+            "=" ++ formulaToString ast_
+
+        RootLiteral s ->
+            s
+
+
+formulaToString : FormulaAST -> String
+formulaToString ast =
+    case ast of
+        Plus a b ->
+            formulaToString a ++ "+" ++ formulaToString b
+
+        Minus a b ->
+            formulaToString a ++ "-" ++ formulaToString b
+
+        IntLiteral i ->
+            S.fromInt i
+
+        StringLiteral s ->
+            "\"" ++ s ++ "\""
+
+        RelativeReference ref ->
+            ref
+
+        AbsoluteReference sheet ref ->
+            sheet ++ "." ++ ref
+
+
+parseCell : String -> Result Error AST
 parseCell s =
-    P.run root s |> R.mapError Debug.toString
+    P.run root s |> R.mapError (Error s)
 
 
-parseName : String -> Result String String
-parseName =
-    P.run (name |. end) >> R.mapError Debug.toString
+parseName : String -> Result Error String
+parseName s =
+    P.run (name |. end) s |> R.mapError (Error s)
 
 
 root : Parser AST
@@ -36,12 +78,12 @@ root =
                 }
     in
     oneOf
-        [ succeed identity
+        [ succeed Formula
             |. symbol "="
             |. spaces
             |= expression
             |. end
-        , map StringLiteral var
+        , map RootLiteral var
         ]
 
 
@@ -54,14 +96,14 @@ name =
         }
 
 
-reference : Parser AST
+reference : Parser FormulaAST
 reference =
     succeed identity
         |= name
         |> P.andThen referenceHelp
 
 
-referenceHelp : String -> Parser AST
+referenceHelp : String -> Parser FormulaAST
 referenceHelp str =
     oneOf
         [ succeed (AbsoluteReference str)
@@ -81,7 +123,7 @@ myInt =
         ]
 
 
-term : Parser AST
+term : Parser FormulaAST
 term =
     succeed identity
         |= oneOf
@@ -95,12 +137,12 @@ term =
         |. spaces
 
 
-expression : Parser AST
+expression : Parser FormulaAST
 expression =
     term |> P.andThen (expressionHelp [])
 
 
-expressionHelp : List ( Operator, AST ) -> AST -> Parser AST
+expressionHelp : List ( Operator, FormulaAST ) -> FormulaAST -> Parser FormulaAST
 expressionHelp reversedOps expr =
     oneOf
         [ succeed T.pair
@@ -126,7 +168,7 @@ operator =
         ]
 
 
-finalize : List ( Operator, AST ) -> AST -> AST
+finalize : List ( Operator, FormulaAST ) -> FormulaAST -> FormulaAST
 finalize reversedOps finalExpr =
     case reversedOps of
         [] ->
