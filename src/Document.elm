@@ -38,7 +38,7 @@ type Error
     | UndefinedSheetError Name
     | RemovingLastSheetError Name
     | InvalidSheetNameError
-    | DuplicateSheetNameError
+    | DuplicateSheetNameError Name
 
 
 type alias Id =
@@ -100,12 +100,16 @@ next (Serial id) =
 
 
 type Document
-    = Document
-        { cells : Dict ( SheetId, Name ) Cell
-        , sheetIds : OrderedDict Name SheetId
-        , serial : Serial
-        , currentSheet : Name
-        }
+    = Document DocData
+
+
+type alias DocData =
+    { cells : Dict ( SheetId, Name ) Cell
+    , serial : Serial
+    , sheetsBefore : OrderedDict Name SheetId
+    , currentSheet : ( Name, SheetId )
+    , sheetsAfter : OrderedDict Name SheetId
+    }
 
 
 singleSheet : Name -> Document
@@ -116,10 +120,34 @@ singleSheet name =
     in
     Document
         { cells = D.empty
-        , sheetIds = OD.fromList [ ( name, sheetId ) ]
         , serial = serial
-        , currentSheet = name
+        , currentSheet = ( name, sheetId )
+        , sheetsBefore = OD.empty
+        , sheetsAfter = OD.empty
         }
+
+
+findSheetIdByName : Name -> DocData -> Result Error SheetId
+findSheetIdByName name { sheetsBefore, sheetsAfter, currentSheet } =
+    let
+        ( currentName, currentId ) =
+            currentSheet
+    in
+    if name == currentName then
+        Ok currentId
+
+    else
+        case OD.get name sheetsBefore of
+            Just id ->
+                Ok id
+
+            Nothing ->
+                case OD.get name sheetsAfter of
+                    Just id ->
+                        Ok id
+
+                    Nothing ->
+                        Err (UndefinedSheetError name)
 
 
 type Position a
@@ -129,163 +157,165 @@ type Position a
 
 
 sheets : Document -> List (Position Name)
-sheets (Document { sheetIds, currentSheet }) =
-    let
-        f name list =
-            if name == currentSheet then
-                Current name :: list
-
-            else
-                case list of
-                    [] ->
-                        [ After name ]
-
-                    (Before _) :: _ ->
-                        Before name :: list
-
-                    (Current _) :: _ ->
-                        Before name :: list
-
-                    (After _) :: _ ->
-                        After name :: list
-    in
-    OD.keys sheetIds |> L.foldr f []
+sheets (Document { sheetsBefore, currentSheet, sheetsAfter }) =
+    L.concat
+        [ sheetsBefore |> OD.keys |> L.map Before
+        , [ Current (T.first currentSheet) ]
+        , sheetsAfter |> OD.keys |> L.map After
+        ]
 
 
 selectSheet : Name -> Document -> Result Error Document
-selectSheet name (Document d) =
-    if OD.member name d.sheetIds then
-        Ok <| Document { d | currentSheet = name }
-
-    else
-        Err (UndefinedSheetError name)
-
-
-insertSheet : Name -> Document -> Document
-insertSheet name doc =
+selectSheet selectedName (Document data) =
     let
-        ( _, newDoc ) =
-            findOrCreateSheet name doc
+        tag pivot position list =
+            case list of
+                [] ->
+                    []
+
+                head :: tail ->
+                    if head == pivot then
+                        -- skip element and change position
+                        tag pivot After tail
+
+                    else
+                        -- append to the list with the current position
+                        position head :: tag pivot position tail
+
+        sheetList =
+            L.concat
+                [ OD.toList data.sheetsBefore
+                , [ data.currentSheet ]
+                , OD.toList data.sheetsAfter
+                ]
+
+        toData sheet d =
+            case sheet of
+                Before ( name, id ) ->
+                    { d | sheetsBefore = OD.insert name id d.sheetsBefore }
+
+                After ( name, id ) ->
+                    { d | sheetsAfter = OD.insert name id d.sheetsAfter }
+
+                Current _ ->
+                    d
     in
-    newDoc
+    findSheetIdByName selectedName data
+        |> R.map
+            (\id ->
+                sheetList
+                    |> tag ( selectedName, id ) Before
+                    |> L.foldl toData
+                        { data
+                            | currentSheet = ( selectedName, id )
+                            , sheetsBefore = OD.empty
+                            , sheetsAfter = OD.empty
+                        }
+                    |> Document
+            )
 
 
-findOrCreateSheet : Name -> Document -> ( SheetId, Document )
-findOrCreateSheet name (Document d) =
+insertSheet : Name -> Document -> Result Error Document
+insertSheet name (Document data) =
     let
-        ( id, serial, sheetIds ) =
-            case OD.get name d.sheetIds of
-                Just id_ ->
-                    ( id_, d.serial, d.sheetIds )
-
-                Nothing ->
-                    let
-                        ( id_, serial_ ) =
-                            next d.serial
-                    in
-                    ( id_, serial_, OD.insert name id_ d.sheetIds )
+        ( serial, sheetsAfter ) =
+            let
+                ( id_, serial_ ) =
+                    next data.serial
+            in
+            ( serial_, OD.insert name id_ data.sheetsAfter )
     in
-    ( id
-    , Document
-        { d
-            | serial = serial
-            , sheetIds = sheetIds
-        }
-    )
+    case findSheetIdByName name data of
+        Ok _ ->
+            Err (DuplicateSheetNameError name)
+
+        Err _ ->
+            Ok <|
+                Document
+                    { data
+                        | serial = serial
+                        , sheetsAfter = sheetsAfter
+                    }
 
 
 removeSheet : Name -> Document -> Result Error Document
 removeSheet name (Document d) =
-    OD.get name d.sheetIds
-        |> R.fromMaybe (UndefinedSheetError name)
-        |> R.andThen
-            (if L.length (OD.keys d.sheetIds) == 1 then
-                always (Err (RemovingLastSheetError name))
+    if name == T.first d.currentSheet then
+        case ( OD.toList d.sheetsBefore, OD.toList d.sheetsAfter ) of
+            ( _, head :: tail ) ->
+                Ok <| Document { d | currentSheet = head, sheetsAfter = OD.fromList tail }
 
-             else
-                Ok
-            )
-        |> R.map
-            (\id ->
-                let
-                    sheetIds =
-                        OD.remove name d.sheetIds
-                in
-                Document
-                    { d
-                        | sheetIds = sheetIds
-                        , cells = d.cells |> D.filter (\( id_, _ ) _ -> id /= id_)
-                        , currentSheet =
-                            if d.currentSheet == name then
-                                -- FIXME: we should not need `withDefault` here.
-                                OD.keys sheetIds |> L.head |> M.withDefault ""
+            ( head :: tail, _ ) ->
+                Ok <| Document { d | currentSheet = head, sheetsBefore = OD.fromList tail }
 
-                            else
-                                d.currentSheet
-                    }
-            )
+            _ ->
+                Err (RemovingLastSheetError name)
+
+    else
+        findSheetIdByName name d
+            |> R.map
+                (\id ->
+                    Document
+                        { d
+                            | sheetsBefore = OD.remove name d.sheetsBefore
+                            , sheetsAfter = OD.remove name d.sheetsAfter
+                            , cells = d.cells |> D.filter (\( id_, _ ) _ -> id /= id_)
+                        }
+                )
 
 
 renameSheet : Name -> Name -> Document -> Result Error Document
 renameSheet name newName_ (Document d) =
-    if OD.member newName_ d.sheetIds then
-        Err DuplicateSheetNameError
+    findSheetIdByName name d
+        |> R.andThen
+            (\id ->
+                case findSheetIdByName newName_ d of
+                    Ok _ ->
+                        Err (DuplicateSheetNameError newName_)
 
-    else
-        case parseName newName_ of
-            Ok newName ->
-                let
-                    rename_ ( n, id ) =
-                        if n == name then
-                            ( newName, id )
-
-                        else
-                            ( n, id )
-                in
-                Ok <|
-                    Document
-                        { d
-                            | sheetIds =
-                                d.sheetIds |> OD.toList |> L.map rename_ |> OD.fromList
-                            , currentSheet =
-                                if name == d.currentSheet then
-                                    newName
+                    Err _ ->
+                        Ok id
+            )
+        |> R.andThen
+            (\id ->
+                case parseName newName_ of
+                    Ok newName ->
+                        let
+                            rename ( n, id_ ) =
+                                if n == name then
+                                    ( newName, id_ )
 
                                 else
-                                    d.currentSheet
-                        }
+                                    ( n, id_ )
+                        in
+                        Ok <|
+                            Document
+                                { d
+                                    | sheetsBefore =
+                                        d.sheetsBefore |> OD.toList |> L.map rename |> OD.fromList
+                                    , sheetsAfter =
+                                        d.sheetsAfter |> OD.toList |> L.map rename |> OD.fromList
+                                    , currentSheet = rename d.currentSheet
+                                }
 
-            Err _ ->
-                Err InvalidSheetNameError
+                    Err _ ->
+                        Err InvalidSheetNameError
+            )
 
 
 insert : Name -> String -> Document -> Document
-insert cellName value (Document d_) =
+insert cellName value (Document d) =
     let
-        ( id, Document d ) =
-            findOrCreateSheet d_.currentSheet (Document d_)
+        ( _, id ) =
+            d.currentSheet
     in
     case value of
         "" ->
-            remove d.currentSheet cellName (Document d_)
+            Document { d | cells = D.remove ( id, cellName ) d.cells }
 
         _ ->
             Document
                 { d | cells = D.insert ( id, cellName ) (fromSource value) d.cells }
-
-
-remove : Name -> Name -> Document -> Document
-remove sheetName cellName doc =
-    let
-        (Document d) =
-            doc
-    in
-    case OD.get sheetName d.sheetIds of
-        Nothing ->
-            doc
-
-        Just id ->
-            Document { d | cells = D.remove ( id, cellName ) d.cells }
 
 
 fromList : Name -> List ( String, String ) -> Document
@@ -293,39 +323,37 @@ fromList sheet pairs =
     List.foldl (\( a, b ) -> insert a b) (singleSheet sheet) pairs
 
 
-getCell : Name -> Name -> Document -> Result Error Cell
-getCell sheetName cellName (Document { cells, sheetIds }) =
-    OD.get sheetName sheetIds
-        |> R.fromMaybe (UndefinedSheetError sheetName)
+getCell : Name -> Name -> DocData -> Result Error Cell
+getCell sheetName cellName data =
+    findSheetIdByName sheetName data
         |> R.andThen
             (\id ->
-                D.get ( id, cellName ) cells
-                    |> R.fromMaybe
-                        (UndefinedNameError ( sheetName, cellName ))
+                D.get ( id, cellName ) data.cells
+                    |> R.fromMaybe (UndefinedNameError ( sheetName, cellName ))
             )
 
 
 cellSource : Name -> Document -> Result Error String
 cellSource cellName (Document d) =
-    getCell d.currentSheet cellName (Document d) |> R.map source
+    getCell (T.first d.currentSheet) cellName d |> R.map source
 
 
 get : Name -> Document -> ValueOrError
 get name (Document d) =
-    evalCell ( d.currentSheet, name ) D.empty (Document d) |> T.first
+    evalCell ( T.first d.currentSheet, name ) D.empty d |> T.first
 
 
 type alias Memo =
     Dict LocatedName ValueOrError
 
 
-evalCell : LocatedName -> Memo -> Document -> ( ValueOrError, Memo )
-evalCell name memo doc =
-    evalHelp [] name memo doc
+evalCell : LocatedName -> Memo -> DocData -> ( ValueOrError, Memo )
+evalCell name memo data =
+    evalHelp [] name memo data
 
 
-evalHelp : List LocatedName -> LocatedName -> Memo -> Document -> ( ValueOrError, Memo )
-evalHelp ancestors name memo_ doc =
+evalHelp : List LocatedName -> LocatedName -> Memo -> DocData -> ( ValueOrError, Memo )
+evalHelp ancestors name memo_ data =
     let
         intBinaryOperator f memo errMsg x y =
             let
@@ -373,13 +401,10 @@ evalHelp ancestors name memo_ doc =
                     intBinaryOperator (-) memo "(-) works only on IntValue" x y
 
                 RelativeReference cellName ->
-                    evalHelp (name :: ancestors) ( T.first name, cellName ) memo doc
+                    evalHelp (name :: ancestors) ( T.first name, cellName ) memo data
 
                 AbsoluteReference sheetName cellName ->
-                    evalHelp (name :: ancestors) ( sheetName, cellName ) memo doc
-
-        (Document { cells }) =
-            doc
+                    evalHelp (name :: ancestors) ( sheetName, cellName ) memo data
 
         memoize ( v, m ) =
             ( v, D.insert name v m )
@@ -393,7 +418,7 @@ evalHelp ancestors name memo_ doc =
                 ( v, memo_ )
 
             Nothing ->
-                getCell (T.first name) (T.second name) doc
+                getCell (T.first name) (T.second name) data
                     |> R.andThen parsedCell
                     |> R.map (evalAst memo_)
                     |> (\ast_ ->

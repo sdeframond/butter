@@ -14,7 +14,7 @@ import Test exposing (..)
 suite : Test
 suite =
     let
-        expectValue val res =
+        expectOk val res =
             Expect.equal res (Ok val)
 
         expectError val res =
@@ -34,13 +34,13 @@ suite =
                             singleSheet "sheet1" |> insertSheet "sheet2"
                     in
                     Expect.equal
-                        (sheets doc)
-                        (insert "a" "1" doc |> sheets)
+                        (R.map sheets doc)
+                        (R.map (insert "a" "1") doc |> R.map sheets)
             ]
         , describe "cellSource"
             [ test "retrieves the source of a cell" <|
                 \_ ->
-                    expectValue "src"
+                    expectOk "src"
                         (singleSheet "sheet" |> insert "a" "src" |> cellSource "a")
 
             --, test "returns an error when the cell is not set" <|
@@ -55,11 +55,11 @@ suite =
         , describe "selectSheet"
             [ test "selects a sheet" <|
                 \_ ->
-                    expectValue [ Before "sheet", Current "sheet2", After "sheet3" ]
+                    expectOk [ Before "sheet", Current "sheet2", After "sheet3" ]
                         (singleSheet "sheet"
                             |> insertSheet "sheet2"
-                            |> insertSheet "sheet3"
-                            |> selectSheet "sheet2"
+                            |> R.andThen (insertSheet "sheet3")
+                            |> R.andThen (selectSheet "sheet2")
                             |> R.map sheets
                         )
             , test "returns an error if the selected sheet does not exist" <|
@@ -72,31 +72,28 @@ suite =
         , describe "insertSheet"
             [ test "should insert a sheet" <|
                 \_ ->
-                    Expect.equal
-                        (singleSheet "sheet" |> insertSheet "toto" |> sheets)
-                        [ Current "sheet", After "toto" ]
-            , test "is idempotent" <|
+                    expectOk [ Current "sheet", After "toto" ]
+                        (singleSheet "sheet" |> insertSheet "toto" |> R.map sheets)
+            , test "cannot create duplicates" <|
                 \_ ->
-                    Expect.equal
-                        (singleSheet "sheet")
+                    expectError (DuplicateSheetNameError "sheet")
                         (singleSheet "sheet" |> insertSheet "sheet")
             ]
         , describe "removeSheet"
             [ test "removes a given sheet" <|
                 \_ ->
-                    Expect.equal
+                    expectOk [ Current "toto" ]
                         (singleSheet "sheet"
                             |> insertSheet "toto"
-                            |> removeSheet "sheet"
+                            |> R.andThen (removeSheet "sheet")
                             |> R.map sheets
                         )
-                        (Ok [ Current "toto" ])
             , test "does not removes the other sheets' cells" <|
                 \_ ->
-                    expectValue (StringValue "1")
+                    expectOk (StringValue "1")
                         (singleSheet "sheet"
                             |> insertSheet "otherSheet"
-                            |> selectSheet "otherSheet"
+                            |> R.andThen (selectSheet "otherSheet")
                             |> R.map (insert "a" "1")
                             |> R.andThen (removeSheet "sheet")
                             |> R.andThen (get "a")
@@ -106,7 +103,7 @@ suite =
                     expectError (UndefinedSheetError "toto")
                         (singleSheet "sheet"
                             |> insertSheet "toto"
-                            |> removeSheet "toto"
+                            |> R.andThen (removeSheet "toto")
                             |> R.andThen (removeSheet "toto")
                         )
             , test "returns an error when removing the last sheet" <|
@@ -126,26 +123,23 @@ suite =
                         )
             , test "renames only if the sheet exists" <|
                 \_ ->
-                    Expect.equal (Ok [ Current "sheet" ])
+                    expectError (UndefinedSheetError "doesNotExist")
                         (singleSheet "sheet"
                             |> renameSheet "doesNotExist" "renamed"
-                            |> R.map sheets
                         )
             , test "renames only one sheet" <|
                 \_ ->
-                    Expect.equal (Ok [ Current "sheet1", After "renamed", After "sheet3" ])
+                    expectOk [ Current "sheet1", After "renamed", After "sheet3" ]
                         (singleSheet "sheet1"
                             |> insertSheet "sheet2"
-                            |> insertSheet "sheet3"
-                            |> renameSheet "sheet2" "renamed"
+                            |> R.andThen (insertSheet "sheet3")
+                            |> R.andThen (renameSheet "sheet2" "renamed")
                             |> R.map sheets
                         )
             , test "enforces name unicity" <|
                 \_ ->
-                    Expect.equal (Err DuplicateSheetNameError)
-                        (singleSheet "sheet"
-                            |> renameSheet "sheet" "sheet"
-                        )
+                    expectError (DuplicateSheetNameError "sheet")
+                        (singleSheet "sheet" |> renameSheet "sheet" "sheet")
             , test "enforces name format" <|
                 \_ ->
                     Expect.equal (Err InvalidSheetNameError)
@@ -154,7 +148,7 @@ suite =
                         )
             , test "does not break cellSource" <|
                 \_ ->
-                    expectValue "1"
+                    expectOk "1"
                         (singleSheet "sheet"
                             |> insert "a" "1"
                             |> renameSheet "sheet" "toto"
@@ -162,7 +156,7 @@ suite =
                         )
             , test "does not break get" <|
                 \_ ->
-                    expectValue (StringValue "1")
+                    expectOk (StringValue "1")
                         (singleSheet "sheet"
                             |> insert "a" "1"
                             |> renameSheet "sheet" "toto"
@@ -176,11 +170,11 @@ suite =
                         (singleSheet "sheet" |> get "a")
             , test "single value" <|
                 \_ ->
-                    expectValue (StringValue "1")
+                    expectOk (StringValue "1")
                         (fromList "sheet" [ ( "a", "1" ) ] |> get "a")
             , test "simple formula" <|
                 \_ ->
-                    expectValue (IntValue -7)
+                    expectOk (IntValue -7)
                         (get "a" <| fromList "sheet" [ ( "a", "=1+1-10+1" ) ])
             , fuzz (tuple ( int, int )) "Fuzzing substraction" <|
                 \( i, j ) ->
@@ -189,7 +183,7 @@ suite =
                             fromList "sheet"
                                 [ ( "a", String.concat [ "=", String.fromInt i, "-", String.fromInt j ] ) ]
                     in
-                    expectValue (IntValue (i - j)) (get "a" doc)
+                    expectOk (IntValue (i - j)) (get "a" doc)
             , fuzz (tuple ( int, int )) "Fuzzing addition" <|
                 \( i, j ) ->
                     let
@@ -197,7 +191,7 @@ suite =
                             fromList "sheet"
                                 [ ( "a", String.concat [ "=", String.fromInt i, "+", String.fromInt j ] ) ]
                     in
-                    expectValue (IntValue (i + j)) (get "a" doc)
+                    expectOk (IntValue (i + j)) (get "a" doc)
             , test "empty string" <|
                 \_ ->
                     expectError (UndefinedNameError ( "sheet", "a" ))
@@ -211,7 +205,7 @@ suite =
                                 , ( "b", "=a" )
                                 ]
                     in
-                    expectValue (StringValue "1")
+                    expectOk (StringValue "1")
                         (get "b" doc)
             , test "cyclic reference" <|
                 \_ ->
@@ -226,10 +220,10 @@ suite =
                         (get "b" doc)
             , test "absolute reference" <|
                 \_ ->
-                    expectValue (StringValue "1")
+                    expectOk (StringValue "1")
                         (fromList "sheet1" [ ( "a", "=sheet2.b" ) ]
                             |> insertSheet "sheet2"
-                            |> selectSheet "sheet2"
+                            |> R.andThen (selectSheet "sheet2")
                             |> R.map (insert "b" "1")
                             |> R.andThen (selectSheet "sheet1")
                             |> R.andThen (get "a")

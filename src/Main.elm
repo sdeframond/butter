@@ -120,9 +120,10 @@ updateModel msg model =
         InsertSheet ->
             { model
                 | doc =
-                    Doc.insertSheet
-                        ("Sheet" ++ String.fromInt model.sheetCounter)
-                        model.doc
+                    R.withDefault model.doc <|
+                        Doc.insertSheet
+                            ("Sheet" ++ String.fromInt model.sheetCounter)
+                            model.doc
                 , sheetCounter = model.sheetCounter + 1
             }
 
