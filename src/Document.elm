@@ -2,17 +2,17 @@ module Document exposing
     ( Document
     , Error(..)
     , Name
-    , SheetError(..)
+    , Position(..)
     , Value(..)
     , ValueOrError
     , cellSource
-    , empty
     , fromList
     , get
     , insert
     , insertSheet
     , removeSheet
     , renameSheet
+    , selectSheet
     , sheets
     , singleSheet
     )
@@ -32,10 +32,13 @@ import Tuple as T
 type Error
     = ParsingError AST.Error
     | UndefinedNameError LocatedName
-    | UndefinedSheetError Name
     | UndefinedIdError Id
     | TypeError String
     | CyclicReferenceError (List LocatedName)
+    | UndefinedSheetError Name
+    | RemovingLastSheetError Name
+    | InvalidSheetNameError
+    | DuplicateSheetNameError
 
 
 type alias Id =
@@ -101,30 +104,61 @@ type Document
         { cells : Dict ( SheetId, Name ) Cell
         , sheetIds : OrderedDict Name SheetId
         , serial : Serial
+        , currentSheet : Name
         }
 
 
-empty : Document
-empty =
+singleSheet : Name -> Document
+singleSheet name =
     let
         ( sheetId, serial ) =
             next (Serial 1)
     in
     Document
         { cells = D.empty
-        , sheetIds = OD.empty
+        , sheetIds = OD.fromList [ ( name, sheetId ) ]
         , serial = serial
+        , currentSheet = name
         }
 
 
-singleSheet : Name -> Document
-singleSheet name =
-    empty |> insertSheet name
+type Position a
+    = Before a
+    | Current a
+    | After a
 
 
-sheets : Document -> List Name
-sheets (Document { sheetIds }) =
-    OD.keys sheetIds
+sheets : Document -> List (Position Name)
+sheets (Document { sheetIds, currentSheet }) =
+    let
+        f name list =
+            if name == currentSheet then
+                Current name :: list
+
+            else
+                case list of
+                    [] ->
+                        [ After name ]
+
+                    (Before _) :: _ ->
+                        Before name :: list
+
+                    (Current _) :: _ ->
+                        Before name :: list
+
+                    (After _) :: _ ->
+                        After name :: list
+    in
+    OD.keys sheetIds |> L.foldr f []
+
+
+selectSheet : Name -> Document -> Result Error Document
+selectSheet name (Document d) =
+    if OD.member name d.sheetIds then
+        Ok <| Document { d | currentSheet = name }
+
+    else
+        Err (UndefinedSheetError name)
 
 
 insertSheet : Name -> Document -> Document
@@ -160,26 +194,39 @@ findOrCreateSheet name (Document d) =
     )
 
 
-removeSheet : Name -> Document -> Document
+removeSheet : Name -> Document -> Result Error Document
 removeSheet name (Document d) =
-    case OD.get name d.sheetIds of
-        Nothing ->
-            Document d
+    OD.get name d.sheetIds
+        |> R.fromMaybe (UndefinedSheetError name)
+        |> R.andThen
+            (if L.length (OD.keys d.sheetIds) == 1 then
+                always (Err (RemovingLastSheetError name))
 
-        Just id ->
-            Document
-                { d
-                    | sheetIds = OD.remove name d.sheetIds
-                    , cells = d.cells |> D.filter (\( id_, _ ) _ -> id /= id_)
-                }
+             else
+                Ok
+            )
+        |> R.map
+            (\id ->
+                let
+                    sheetIds =
+                        OD.remove name d.sheetIds
+                in
+                Document
+                    { d
+                        | sheetIds = sheetIds
+                        , cells = d.cells |> D.filter (\( id_, _ ) _ -> id /= id_)
+                        , currentSheet =
+                            if d.currentSheet == name then
+                                -- FIXME: we should not need `withDefault` here.
+                                OD.keys sheetIds |> L.head |> M.withDefault ""
+
+                            else
+                                d.currentSheet
+                    }
+            )
 
 
-type SheetError
-    = InvalidSheetNameError
-    | DuplicateSheetNameError
-
-
-renameSheet : Name -> Name -> Document -> Result SheetError Document
+renameSheet : Name -> Name -> Document -> Result Error Document
 renameSheet name newName_ (Document d) =
     if OD.member newName_ d.sheetIds then
         Err DuplicateSheetNameError
@@ -200,21 +247,27 @@ renameSheet name newName_ (Document d) =
                         { d
                             | sheetIds =
                                 d.sheetIds |> OD.toList |> L.map rename_ |> OD.fromList
+                            , currentSheet =
+                                if name == d.currentSheet then
+                                    newName
+
+                                else
+                                    d.currentSheet
                         }
 
             Err _ ->
                 Err InvalidSheetNameError
 
 
-insert : Name -> Name -> String -> Document -> Document
-insert sheetName cellName value doc =
+insert : Name -> String -> Document -> Document
+insert cellName value (Document d_) =
     let
         ( id, Document d ) =
-            findOrCreateSheet sheetName doc
+            findOrCreateSheet d_.currentSheet (Document d_)
     in
     case value of
         "" ->
-            remove sheetName cellName doc
+            remove d.currentSheet cellName (Document d_)
 
         _ ->
             Document
@@ -237,7 +290,7 @@ remove sheetName cellName doc =
 
 fromList : Name -> List ( String, String ) -> Document
 fromList sheet pairs =
-    List.foldl (\( a, b ) -> insert sheet a b) (singleSheet sheet) pairs
+    List.foldl (\( a, b ) -> insert a b) (singleSheet sheet) pairs
 
 
 getCell : Name -> Name -> Document -> Result Error Cell
@@ -252,14 +305,14 @@ getCell sheetName cellName (Document { cells, sheetIds }) =
             )
 
 
-cellSource : Name -> Name -> Document -> Result Error String
-cellSource sheetName cellName doc =
-    getCell sheetName cellName doc |> R.map source
+cellSource : Name -> Document -> Result Error String
+cellSource cellName (Document d) =
+    getCell d.currentSheet cellName (Document d) |> R.map source
 
 
-get : Name -> Name -> Document -> ValueOrError
-get sheet name doc =
-    evalCell ( sheet, name ) D.empty doc |> T.first
+get : Name -> Document -> ValueOrError
+get name (Document d) =
+    evalCell ( d.currentSheet, name ) D.empty (Document d) |> T.first
 
 
 type alias Memo =

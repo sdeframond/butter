@@ -6,7 +6,7 @@ import Browser
 import Css exposing (..)
 import Css.Global as Global
 import Dict as D exposing (Dict)
-import Document as Doc exposing (Name, Value(..), ValueOrError)
+import Document as Doc exposing (Name, Position(..), Value(..), ValueOrError)
 import Html
 import Html.Styled as H exposing (..)
 import Html.Styled.Attributes exposing (css, value)
@@ -36,14 +36,13 @@ main =
 type alias Model =
     { doc : Doc.Document
     , edit : EditStatus
-    , currentSheet : Name
     , sheetCounter : Int
     }
 
 
 type EditStatus
     = NotEditing
-    | EditingSheet Name String
+    | EditingSheet Name Name
     | EditingCell ( Col, Row )
 
 
@@ -69,7 +68,6 @@ init flags =
 initModel : Model
 initModel =
     { doc = Doc.singleSheet "Sheet1"
-    , currentSheet = "Sheet1"
     , sheetCounter = 2
     , edit = NotEditing
     }
@@ -117,7 +115,7 @@ updateModel msg model =
             { commitEdit | edit = EditingCell ( col, row ) }
 
         UpdateSource name src ->
-            { model | doc = Doc.insert model.currentSheet name src model.doc }
+            { model | doc = Doc.insert name src model.doc }
 
         InsertSheet ->
             { model
@@ -129,32 +127,22 @@ updateModel msg model =
             }
 
         SelectSheet name ->
-            if L.member name (Doc.sheets model.doc) then
-                { commitEdit | currentSheet = name }
-
-            else
-                model
+            { commitEdit
+                | doc =
+                    Doc.selectSheet name commitEdit.doc
+                        |> R.withDefault commitEdit.doc
+            }
 
         RemoveSheet name ->
             let
                 doc =
                     Doc.removeSheet name commitEdit.doc
             in
-            case Doc.sheets doc of
-                [] ->
-                    model
-
-                head :: rest ->
-                    Debug.log ""
-                        { commitEdit
-                            | doc = doc
-                            , currentSheet =
-                                if L.member commitEdit.currentSheet rest then
-                                    commitEdit.currentSheet
-
-                                else
-                                    head
-                        }
+            { commitEdit
+                | doc =
+                    Doc.removeSheet name commitEdit.doc
+                        |> R.withDefault commitEdit.doc
+            }
 
         EditSheet name ->
             { commitEdit | edit = EditingSheet name name }
@@ -270,14 +258,14 @@ tableView model =
                         |> S.concat
 
                 defaultCell =
-                    Doc.get model.currentSheet name model.doc
+                    Doc.get name model.doc
                         |> valueToString
                         |> text
 
                 editCell =
                     input
                         [ value
-                            (Doc.cellSource model.currentSheet name model.doc
+                            (Doc.cellSource name model.doc
                                 |> R.withDefault ""
                             )
                         , onInput <| UpdateSource name
@@ -334,13 +322,13 @@ sheetSelector model =
                 , padding2 (px 5) (px 5)
                 ]
 
-        sheetItem name =
+        sheetItem item =
             let
-                defaultItem =
+                defaultItem name isCurrent =
                     li
                         [ itemCss
                         , css
-                            [ if name == model.currentSheet then
+                            [ if isCurrent then
                                 fontWeight bold
 
                               else
@@ -354,22 +342,24 @@ sheetSelector model =
                             [ text "[x]" ]
                         ]
             in
-            case model.edit of
-                EditingSheet oldName newName ->
-                    if oldName == name then
-                        li [ itemCss ]
-                            [ input
-                                [ value newName
-                                , onInput UpdateSheetName
-                                ]
-                                []
+            case ( item, model.edit ) of
+                ( Current name, EditingSheet oldName newName ) ->
+                    li [ itemCss ]
+                        [ input
+                            [ value newName
+                            , onInput UpdateSheetName
                             ]
+                            []
+                        ]
 
-                    else
-                        defaultItem
+                ( Current name, _ ) ->
+                    defaultItem name True
 
-                _ ->
-                    defaultItem
+                ( Before name, _ ) ->
+                    defaultItem name False
+
+                ( After name, _ ) ->
+                    defaultItem name False
 
         addSheet =
             li

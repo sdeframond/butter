@@ -5,6 +5,7 @@ import Document exposing (..)
 import Expect exposing (Expectation)
 import Fuzz exposing (Fuzzer, int, list, string, tuple)
 import List as L
+import Maybe as M
 import Result as R
 import String as S
 import Test exposing (..)
@@ -24,8 +25,8 @@ suite =
             [ test "is idempotent" <|
                 \_ ->
                     Expect.equal
-                        (empty |> insert "sheet" "a" "qwe")
-                        (empty |> insert "sheet" "a" "qwe" |> insert "sheet" "a" "qwe")
+                        (singleSheet "sheet" |> insert "a" "qwe")
+                        (singleSheet "sheet" |> insert "a" "qwe" |> insert "a" "qwe")
             , test "does not change sheet order" <|
                 \_ ->
                     let
@@ -34,33 +35,51 @@ suite =
                     in
                     Expect.equal
                         (sheets doc)
-                        (insert "sheet1" "a" "1" doc |> sheets)
+                        (insert "a" "1" doc |> sheets)
             ]
         , describe "cellSource"
             [ test "retrieves the source of a cell" <|
                 \_ ->
                     expectValue "src"
-                        (empty |> insert "sheet" "a" "src" |> cellSource "sheet" "a")
-            , test "returns an error when the cell is not set" <|
-                \_ ->
-                    expectError (UndefinedSheetError "sheet")
-                        (empty |> cellSource "sheet" "a")
+                        (singleSheet "sheet" |> insert "a" "src" |> cellSource "a")
+
+            --, test "returns an error when the cell is not set" <|
+            --    \_ ->
+            --        expectError (UndefinedSheetError "sheet")
+            --            (empty |> cellSource "sheet" "a")
             ]
         , describe "sheets"
             [ test "returns all sheets" <|
-                \_ -> Expect.equal (sheets <| singleSheet "sheet") [ "sheet" ]
+                \_ -> Expect.equal (sheets <| singleSheet "sheet") [ Current "sheet" ]
+            ]
+        , describe "selectSheet"
+            [ test "selects a sheet" <|
+                \_ ->
+                    expectValue [ Before "sheet", Current "sheet2", After "sheet3" ]
+                        (singleSheet "sheet"
+                            |> insertSheet "sheet2"
+                            |> insertSheet "sheet3"
+                            |> selectSheet "sheet2"
+                            |> R.map sheets
+                        )
+            , test "returns an error if the selected sheet does not exist" <|
+                \_ ->
+                    expectError (UndefinedSheetError "toto")
+                        (singleSheet "sheet"
+                            |> selectSheet "toto"
+                        )
             ]
         , describe "insertSheet"
             [ test "should insert a sheet" <|
                 \_ ->
                     Expect.equal
                         (singleSheet "sheet" |> insertSheet "toto" |> sheets)
-                        [ "sheet", "toto" ]
+                        [ Current "sheet", After "toto" ]
             , test "is idempotent" <|
                 \_ ->
                     Expect.equal
-                        (empty |> insertSheet "sheet")
-                        (empty |> insertSheet "sheet" |> insertSheet "sheet")
+                        (singleSheet "sheet")
+                        (singleSheet "sheet" |> insertSheet "sheet")
             ]
         , describe "removeSheet"
             [ test "removes a given sheet" <|
@@ -69,81 +88,100 @@ suite =
                         (singleSheet "sheet"
                             |> insertSheet "toto"
                             |> removeSheet "sheet"
-                            |> sheets
+                            |> R.map sheets
                         )
-                        [ "toto" ]
+                        (Ok [ Current "toto" ])
             , test "does not removes the other sheets' cells" <|
                 \_ ->
                     expectValue (StringValue "1")
                         (singleSheet "sheet"
-                            |> insert "other sheet" "a" "1"
-                            |> get "other sheet" "a"
+                            |> insertSheet "otherSheet"
+                            |> selectSheet "otherSheet"
+                            |> R.map (insert "a" "1")
+                            |> R.andThen (removeSheet "sheet")
+                            |> R.andThen (get "a")
                         )
-            , test "is idempotent" <|
+            , test "returns an error when the sheet does not exist" <|
                 \_ ->
-                    Expect.equal
+                    expectError (UndefinedSheetError "toto")
                         (singleSheet "sheet"
                             |> insertSheet "toto"
-                            |> removeSheet "sheet"
-                            |> removeSheet "sheet"
-                            |> sheets
+                            |> removeSheet "toto"
+                            |> R.andThen (removeSheet "toto")
                         )
+            , test "returns an error when removing the last sheet" <|
+                \_ ->
+                    expectError (RemovingLastSheetError "sheet")
                         (singleSheet "sheet"
-                            |> insertSheet "toto"
                             |> removeSheet "sheet"
-                            |> sheets
                         )
             ]
         , describe "renameSheet"
-            [ test "it renames a sheet" <|
+            [ test "renames a sheet" <|
                 \_ ->
-                    Expect.equal (Ok [ "renamed" ])
+                    Expect.equal (Ok [ Current "renamed" ])
                         (singleSheet "sheet"
                             |> renameSheet "sheet" "renamed"
                             |> R.map sheets
                         )
-            , test "it renames only if the sheet exists" <|
+            , test "renames only if the sheet exists" <|
                 \_ ->
-                    Expect.equal (Ok [ "sheet" ])
+                    Expect.equal (Ok [ Current "sheet" ])
                         (singleSheet "sheet"
                             |> renameSheet "doesNotExist" "renamed"
                             |> R.map sheets
                         )
-            , test "it renames only one sheet" <|
+            , test "renames only one sheet" <|
                 \_ ->
-                    Expect.equal (Ok [ "sheet1", "renamed", "sheet3" ])
+                    Expect.equal (Ok [ Current "sheet1", After "renamed", After "sheet3" ])
                         (singleSheet "sheet1"
                             |> insertSheet "sheet2"
                             |> insertSheet "sheet3"
                             |> renameSheet "sheet2" "renamed"
                             |> R.map sheets
                         )
-            , test "it enforces name unicity" <|
+            , test "enforces name unicity" <|
                 \_ ->
                     Expect.equal (Err DuplicateSheetNameError)
                         (singleSheet "sheet"
                             |> renameSheet "sheet" "sheet"
                         )
-            , test "it enforces name format" <|
+            , test "enforces name format" <|
                 \_ ->
                     Expect.equal (Err InvalidSheetNameError)
                         (singleSheet "sheet"
                             |> renameSheet "sheet" "not a valid sheet name"
+                        )
+            , test "does not break cellSource" <|
+                \_ ->
+                    expectValue "1"
+                        (singleSheet "sheet"
+                            |> insert "a" "1"
+                            |> renameSheet "sheet" "toto"
+                            |> R.andThen (cellSource "a")
+                        )
+            , test "does not break get" <|
+                \_ ->
+                    expectValue (StringValue "1")
+                        (singleSheet "sheet"
+                            |> insert "a" "1"
+                            |> renameSheet "sheet" "toto"
+                            |> R.andThen (get "a")
                         )
             ]
         , describe "get"
             [ test "empty value" <|
                 \_ ->
                     expectError (UndefinedNameError ( "sheet", "a" ))
-                        (singleSheet "sheet" |> get "sheet" "a")
+                        (singleSheet "sheet" |> get "a")
             , test "single value" <|
                 \_ ->
                     expectValue (StringValue "1")
-                        (fromList "sheet" [ ( "a", "1" ) ] |> get "sheet" "a")
+                        (fromList "sheet" [ ( "a", "1" ) ] |> get "a")
             , test "simple formula" <|
                 \_ ->
                     expectValue (IntValue -7)
-                        (get "sheet" "a" <| fromList "sheet" [ ( "a", "=1+1-10+1" ) ])
+                        (get "a" <| fromList "sheet" [ ( "a", "=1+1-10+1" ) ])
             , fuzz (tuple ( int, int )) "Fuzzing substraction" <|
                 \( i, j ) ->
                     let
@@ -151,7 +189,7 @@ suite =
                             fromList "sheet"
                                 [ ( "a", String.concat [ "=", String.fromInt i, "-", String.fromInt j ] ) ]
                     in
-                    expectValue (IntValue (i - j)) (get "sheet" "a" doc)
+                    expectValue (IntValue (i - j)) (get "a" doc)
             , fuzz (tuple ( int, int )) "Fuzzing addition" <|
                 \( i, j ) ->
                     let
@@ -159,11 +197,11 @@ suite =
                             fromList "sheet"
                                 [ ( "a", String.concat [ "=", String.fromInt i, "+", String.fromInt j ] ) ]
                     in
-                    expectValue (IntValue (i + j)) (get "sheet" "a" doc)
+                    expectValue (IntValue (i + j)) (get "a" doc)
             , test "empty string" <|
                 \_ ->
                     expectError (UndefinedNameError ( "sheet", "a" ))
-                        (get "sheet" "a" <| fromList "sheet" [ ( "a", "" ) ])
+                        (get "a" <| fromList "sheet" [ ( "a", "" ) ])
             , test "simple reference" <|
                 \_ ->
                     let
@@ -174,7 +212,7 @@ suite =
                                 ]
                     in
                     expectValue (StringValue "1")
-                        (get "sheet" "b" doc)
+                        (get "b" doc)
             , test "cyclic reference" <|
                 \_ ->
                     let
@@ -185,15 +223,17 @@ suite =
                                 ]
                     in
                     expectError (CyclicReferenceError [ ( "sheet", "a" ), ( "sheet", "b" ) ])
-                        (get "sheet" "b" doc)
+                        (get "b" doc)
             , test "absolute reference" <|
                 \_ ->
                     expectValue (StringValue "1")
-                        (fromList "sheet1" [ ( "a", "=sheet2.b" ) ] |> insert "sheet2" "b" "1" |> get "sheet1" "a")
-            , test "missing sheet" <|
-                \_ ->
-                    expectError (UndefinedSheetError "sheet")
-                        (empty |> get "sheet" "a")
+                        (fromList "sheet1" [ ( "a", "=sheet2.b" ) ]
+                            |> insertSheet "sheet2"
+                            |> selectSheet "sheet2"
+                            |> R.map (insert "b" "1")
+                            |> R.andThen (selectSheet "sheet1")
+                            |> R.andThen (get "a")
+                        )
             , describe "complex document" <|
                 let
                     data =
@@ -239,7 +279,7 @@ suite =
                 in
                 L.map
                     (\( name, src, res ) ->
-                        test (name ++ ":" ++ src) (\_ -> Expect.equal (get "sheet" name doc) res)
+                        test (name ++ ":" ++ src) (\_ -> Expect.equal (get name doc) res)
                     )
                     data
             ]
