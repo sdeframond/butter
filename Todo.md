@@ -1,28 +1,31 @@
 TODO
 ====
 
-- Fix : Do not recalculate after each key stroke
-- Feature : support large sheets (#row and col > 1_000_000)
 - Feature : Rename references to a sheet when renaming a sheet
+- Feature : Support large sheets (#row and col > 1_000_000)
+- Feature : Cancel cell edition with Echap
+- Feature : Cancel sheet edition with Echap
 - Feature : Support for tables
 - Feature : Pivot tables
 - Feature : CSV import
 - Feature : Copy/paste (bonus : suport copy-parting from Excel)
 - Feature : Save to file (and load file)
 - Feature : Local storage
-- Feature : more operators (* , ^, /, unary +, ++ on strings) and parenthesis 
-- Feature : functions (which ones ?)
-- Feature : support floating precision numbers
-- Feature : re-order sheets
+- Feature : More operators (* , ^, /, unary +, ++ on strings) and parenthesis 
+- Feature : Re-order sheets
+- Feature : Support floating precision numbers
+- Feature : Functions (which ones ?)
 
 
 DOING
 =====
 
+
 DONE
 ====
 
-- Cell edition
-- Cell evalutation evaluation
-- Sheets
-- Cross-sheet references
+- 2021-02-01 - Fix : Do not recalculate after each key stroke
+- 2021-01 - Cell edition
+- 2021-01 - Cell evalutation evaluation
+- 2021-01 - Sheets
+- 2021-01 - Cross-sheet references

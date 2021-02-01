@@ -43,7 +43,7 @@ type alias Model =
 type EditStatus
     = NotEditing
     | EditingSheet Name Name
-    | EditingCell ( Col, Row )
+    | EditingCell Name String
 
 
 type alias Col =
@@ -80,8 +80,8 @@ initModel =
 
 
 type Msg
-    = EditCell Col Row
-    | UpdateSource Name String
+    = EditCell Name String
+    | UpdateEdit EditStatus
     | InsertSheet
     | SelectSheet Name
     | RemoveSheet Name
@@ -107,15 +107,21 @@ updateModel msg model =
                                 |> R.withDefault model.doc
                     }
 
-                _ ->
+                EditingCell name str ->
+                    { model
+                        | edit = NotEditing
+                        , doc = Doc.insert name str model.doc
+                    }
+
+                NotEditing ->
                     model
     in
     case Debug.log "update msg" msg of
-        EditCell col row ->
-            { commitEdit | edit = EditingCell ( col, row ) }
+        EditCell name str ->
+            { commitEdit | edit = EditingCell name str }
 
-        UpdateSource name src ->
-            { model | doc = Doc.insert name src model.doc }
+        UpdateEdit edit ->
+            { model | edit = edit }
 
         InsertSheet ->
             { model
@@ -181,18 +187,18 @@ view : Model -> Browser.Document Msg
 view model =
     { title = "Butter Spreadsheet"
     , body =
-        [ Global.global
-            [ Global.html [ height (pct 100) ]
-            , Global.body
-                [ displayFlex
-                , flexDirection column
-                , height (pct 100)
+        L.map toUnstyled
+            [ Global.global
+                [ Global.html [ height (pct 100) ]
+                , Global.body
+                    [ displayFlex
+                    , flexDirection column
+                    , height (pct 100)
+                    ]
                 ]
+            , tableView model
+            , sheetSelector model
             ]
-            |> toUnstyled
-        , tableView model |> toUnstyled
-        , sheetSelector model |> toUnstyled
-        ]
     }
 
 
@@ -259,39 +265,40 @@ tableView model =
                         |> S.concat
 
                 defaultCell =
-                    Doc.get name model.doc
-                        |> valueToString
-                        |> text
-
-                editCell =
-                    input
-                        [ value
-                            (Doc.cellSource name model.doc
-                                |> R.withDefault ""
-                            )
-                        , onInput <| UpdateSource name
+                    td
+                        [ css_
+                        , onClick <|
+                            EditCell name
+                                (Doc.cellSource name model.doc |> R.withDefault "")
                         ]
-                        []
+                        [ Doc.get name model.doc
+                            |> valueToString
+                            |> text
+                        ]
+
+                css_ =
+                    css
+                        [ border3 (px 1) solid (rgb 230 230 230)
+                        , minWidth (Css.em 10)
+                        , height (px 20)
+                        ]
             in
-            td
-                [ css
-                    [ border3 (px 1) solid (rgb 230 230 230)
-                    , minWidth (Css.em 10)
-                    , height (px 20)
-                    ]
-                , onClick <| EditCell col row
-                ]
-                [ case model.edit of
-                    EditingCell coord ->
-                        if coord == ( col, row ) then
-                            editCell
+            case model.edit of
+                EditingCell name_ str ->
+                    if name == name_ then
+                        td [ css_ ]
+                            [ input
+                                [ value str
+                                , onInput <| (EditingCell name >> UpdateEdit)
+                                ]
+                                []
+                            ]
 
-                        else
-                            defaultCell
-
-                    _ ->
+                    else
                         defaultCell
-                ]
+
+                _ ->
+                    defaultCell
 
         rows =
             L.range 1 numberOfRow
