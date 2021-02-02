@@ -1,5 +1,6 @@
 module Document.AST exposing
     ( AST(..)
+    , BinaryOp(..)
     , Error(..)
     , FormulaAST(..)
     , parseCell
@@ -8,6 +9,7 @@ module Document.AST exposing
     , toString
     )
 
+import Document.Types exposing (Value(..))
 import Parser as P exposing ((|.), (|=), Parser, backtrackable, end, int, lazy, map, oneOf, spaces, succeed, symbol, variable)
 import Result as R
 import Set
@@ -16,17 +18,20 @@ import Tuple as T
 
 
 type AST
-    = RootLiteral String
+    = RootLiteral Value
     | Formula FormulaAST
 
 
 type FormulaAST
-    = Plus FormulaAST FormulaAST
-    | Minus FormulaAST FormulaAST
-    | IntLiteral Int
-    | StringLiteral String
+    = BinOp BinaryOp FormulaAST FormulaAST
+    | Literal Value
     | RelativeReference String
     | AbsoluteReference String String
+
+
+type BinaryOp
+    = PlusOp
+    | MinusOp
 
 
 type Error
@@ -46,16 +51,10 @@ renameSheets f ast =
 renameSheetsInFormula : (String -> String) -> FormulaAST -> FormulaAST
 renameSheetsInFormula f ast =
     case ast of
-        Plus x y ->
-            Plus (renameSheetsInFormula f x) (renameSheetsInFormula f y)
+        BinOp op x y ->
+            BinOp op (renameSheetsInFormula f x) (renameSheetsInFormula f y)
 
-        Minus x y ->
-            Minus (renameSheetsInFormula f x) (renameSheetsInFormula f y)
-
-        IntLiteral _ ->
-            ast
-
-        StringLiteral _ ->
+        Literal _ ->
             ast
 
         RelativeReference _ ->
@@ -71,23 +70,23 @@ toString ast =
         Formula ast_ ->
             "=" ++ formulaToString ast_
 
-        RootLiteral s ->
+        RootLiteral (StringValue s) ->
             s
+
+        RootLiteral (IntValue i) ->
+            S.fromInt i
 
 
 formulaToString : FormulaAST -> String
 formulaToString ast =
     case ast of
-        Plus a b ->
-            formulaToString a ++ "+" ++ formulaToString b
+        BinOp op a b ->
+            formulaToString a ++ binaryOpToString op ++ formulaToString b
 
-        Minus a b ->
-            formulaToString a ++ "-" ++ formulaToString b
-
-        IntLiteral i ->
+        Literal (IntValue i) ->
             S.fromInt i
 
-        StringLiteral s ->
+        Literal (StringValue s) ->
             "\"" ++ s ++ "\""
 
         RelativeReference ref ->
@@ -95,6 +94,16 @@ formulaToString ast =
 
         AbsoluteReference sheet ref ->
             sheet ++ "." ++ ref
+
+
+binaryOpToString : BinaryOp -> String
+binaryOpToString op =
+    case op of
+        PlusOp ->
+            "+"
+
+        MinusOp ->
+            "-"
 
 
 parseCell : String -> Result Error AST
@@ -123,7 +132,7 @@ root =
             |. spaces
             |= expression
             |. end
-        , map RootLiteral var
+        , map (RootLiteral << StringValue) var
         ]
 
 
@@ -167,8 +176,8 @@ term : Parser FormulaAST
 term =
     succeed identity
         |= oneOf
-            [ map IntLiteral myInt
-            , succeed StringLiteral
+            [ map (Literal << IntValue) myInt
+            , succeed (Literal << StringValue)
                 |. symbol "\""
                 |= variable { start = \c -> True, inner = \c -> c /= '"', reserved = Set.empty }
                 |. symbol "\""
@@ -182,7 +191,7 @@ expression =
     term |> P.andThen (expressionHelp [])
 
 
-expressionHelp : List ( Operator, FormulaAST ) -> FormulaAST -> Parser FormulaAST
+expressionHelp : List ( BinaryOp, FormulaAST ) -> FormulaAST -> Parser FormulaAST
 expressionHelp reversedOps expr =
     oneOf
         [ succeed T.pair
@@ -195,12 +204,7 @@ expressionHelp reversedOps expr =
         ]
 
 
-type Operator
-    = PlusOp
-    | MinusOp
-
-
-operator : Parser Operator
+operator : Parser BinaryOp
 operator =
     oneOf
         [ map (\_ -> PlusOp) (symbol "+")
@@ -208,14 +212,11 @@ operator =
         ]
 
 
-finalize : List ( Operator, FormulaAST ) -> FormulaAST -> FormulaAST
+finalize : List ( BinaryOp, FormulaAST ) -> FormulaAST -> FormulaAST
 finalize reversedOps finalExpr =
     case reversedOps of
         [] ->
             finalExpr
 
-        ( PlusOp, expr ) :: previousOps ->
-            Plus (finalize previousOps expr) finalExpr
-
-        ( MinusOp, expr ) :: previousOps ->
-            Minus (finalize previousOps expr) finalExpr
+        ( op, expr ) :: previousOps ->
+            BinOp op (finalize previousOps expr) finalExpr

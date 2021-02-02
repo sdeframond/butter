@@ -15,7 +15,13 @@ module Document exposing
 import Char exposing (isUpper)
 import Debug exposing (log)
 import Dict as D exposing (Dict)
-import Document.AST as AST exposing (AST(..), FormulaAST(..), parseName)
+import Document.AST as AST
+    exposing
+        ( AST(..)
+        , BinaryOp(..)
+        , FormulaAST(..)
+        , parseName
+        )
 import Document.Cell as Cell exposing (Cell)
 import Document.Types exposing (..)
 import List as L
@@ -266,23 +272,22 @@ evalHelp ancestors name memo_ data =
                 Formula x ->
                     evalFormulaAst memo x
 
-                RootLiteral s ->
-                    ( Ok <| StringValue s, memo )
+                RootLiteral v ->
+                    ( Ok v, memo )
 
         evalFormulaAst : Memo -> FormulaAST -> ( ValueOrError, Memo )
         evalFormulaAst memo ast =
             case ast of
-                IntLiteral i ->
-                    ( Ok <| IntValue i, memo )
+                Literal v ->
+                    ( Ok v, memo )
 
-                StringLiteral s ->
-                    ( Ok <| StringValue s, memo )
+                BinOp op x y ->
+                    case op of
+                        PlusOp ->
+                            intBinaryOperator (+) memo "(+) works only on IntValue" x y
 
-                Plus x y ->
-                    intBinaryOperator (+) memo "(+) works only on IntValue" x y
-
-                Minus x y ->
-                    intBinaryOperator (-) memo "(-) works only on IntValue" x y
+                        MinusOp ->
+                            intBinaryOperator (-) memo "(-) works only on IntValue" x y
 
                 RelativeReference cellName ->
                     evalHelp (name :: ancestors) ( T.first name, cellName ) memo data
