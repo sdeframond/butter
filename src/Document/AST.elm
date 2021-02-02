@@ -1,4 +1,12 @@
-module Document.AST exposing (AST(..), Error(..), FormulaAST(..), parseCell, parseName, toString)
+module Document.AST exposing
+    ( AST(..)
+    , Error(..)
+    , FormulaAST(..)
+    , parseCell
+    , parseName
+    , renameSheets
+    , toString
+    )
 
 import Parser as P exposing ((|.), (|=), Parser, backtrackable, end, int, lazy, map, oneOf, spaces, succeed, symbol, variable)
 import Result as R
@@ -23,6 +31,38 @@ type FormulaAST
 
 type Error
     = Error String (List P.DeadEnd)
+
+
+renameSheets : (String -> String) -> AST -> AST
+renameSheets f ast =
+    case ast of
+        RootLiteral _ ->
+            ast
+
+        Formula formula ->
+            Formula (renameSheetsInFormula f formula)
+
+
+renameSheetsInFormula : (String -> String) -> FormulaAST -> FormulaAST
+renameSheetsInFormula f ast =
+    case ast of
+        Plus x y ->
+            Plus (renameSheetsInFormula f x) (renameSheetsInFormula f y)
+
+        Minus x y ->
+            Minus (renameSheetsInFormula f x) (renameSheetsInFormula f y)
+
+        IntLiteral _ ->
+            ast
+
+        StringLiteral _ ->
+            ast
+
+        RelativeReference _ ->
+            ast
+
+        AbsoluteReference sheet cell ->
+            AbsoluteReference (f sheet) cell
 
 
 toString : AST -> String

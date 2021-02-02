@@ -1,7 +1,6 @@
 TODO
 ====
 
-- Feature : Rename references to a sheet when renaming a sheet
 - Feature : Support large sheets (#row and col > 1_000_000)
 - Feature : Cancel cell edition with Echap
 - Feature : Cancel sheet edition with Echap
@@ -24,6 +23,7 @@ DOING
 DONE
 ====
 
+- 2021-02-02 - Feature : Rename references to a sheet when renaming a sheet
 - 2021-02-01 - Fix : Do not recalculate after each key stroke
 - 2021-01 - Cell edition
 - 2021-01 - Cell evalutation evaluation

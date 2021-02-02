@@ -2,6 +2,7 @@ module DocumentTest exposing (..)
 
 import Dict as D
 import Document exposing (..)
+import Document.Types exposing (..)
 import Expect exposing (Expectation)
 import Fuzz exposing (Fuzzer, int, list, string, tuple)
 import List as L
@@ -42,11 +43,6 @@ suite =
                 \_ ->
                     expectOk "src"
                         (singleSheet "sheet" |> insert "a" "src" |> cellSource "a")
-
-            --, test "returns an error when the cell is not set" <|
-            --    \_ ->
-            --        expectError (UndefinedSheetError "sheet")
-            --            (empty |> cellSource "sheet" "a")
             ]
         , describe "sheets"
             [ test "returns all sheets" <|
@@ -138,8 +134,11 @@ suite =
                         )
             , test "enforces name unicity" <|
                 \_ ->
-                    expectError (DuplicateSheetNameError "sheet")
-                        (singleSheet "sheet" |> renameSheet "sheet" "sheet")
+                    expectError (DuplicateSheetNameError "sheet2")
+                        (singleSheet "sheet"
+                            |> insertSheet "sheet2"
+                            |> R.andThen (renameSheet "sheet" "sheet2")
+                        )
             , test "enforces name format" <|
                 \_ ->
                     Expect.equal (Err InvalidSheetNameError)
@@ -161,6 +160,15 @@ suite =
                             |> insert "a" "1"
                             |> renameSheet "sheet" "toto"
                             |> R.andThen (get "a")
+                        )
+            , test "does not affect references to that sheet" <|
+                \_ ->
+                    expectOk (StringValue "1")
+                        (singleSheet "sheet"
+                            |> insert "a" "1"
+                            |> insert "b" "=sheet.a"
+                            |> renameSheet "sheet" "toto"
+                            |> R.andThen (get "b")
                         )
             ]
         , describe "get"

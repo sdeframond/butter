@@ -6,7 +6,8 @@ import Browser
 import Css exposing (..)
 import Css.Global as Global
 import Dict as D exposing (Dict)
-import Document as Doc exposing (Name, Position(..), Value(..), ValueOrError)
+import Document as Doc
+import Document.Types exposing (Error(..), Name, Position(..), Value(..), ValueOrError)
 import Html
 import Html.Styled as H exposing (..)
 import Html.Styled.Attributes exposing (css, value)
@@ -215,7 +216,7 @@ tableView model =
             case val of
                 Err e ->
                     case e of
-                        Doc.UndefinedNameError _ ->
+                        UndefinedNameError _ ->
                             ""
 
                         r ->
