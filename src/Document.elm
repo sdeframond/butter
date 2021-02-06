@@ -1,8 +1,10 @@
 module Document exposing
     ( Document
+    , Sheet(..)
     , cellSource
     , fromList
     , get
+    , gridSheetItem
     , insert
     , insertSheet
     , removeSheet
@@ -37,23 +39,38 @@ type Document
 
 type alias DocData =
     { cells : Dict LocatedName Cell
-    , sheetsBefore : List Name
-    , currentSheet : Name
-    , sheetsAfter : List Name
+    , sheetsBefore : List SheetItem
+    , currentSheet : SheetItem
+    , sheetsAfter : List SheetItem
     }
+
+
+type alias SheetItem =
+    { name : String
+    , sheet : Sheet
+    }
+
+
+type Sheet
+    = GridSheet
+    | TableSheet
+
+
+gridSheetItem name =
+    { name = name, sheet = GridSheet }
 
 
 singleSheet : Name -> Document
 singleSheet name =
     Document
         { cells = D.empty
-        , currentSheet = name
+        , currentSheet = { name = name, sheet = GridSheet }
         , sheetsBefore = []
         , sheetsAfter = []
         }
 
 
-sheets : Document -> List (Position Name)
+sheets : Document -> List (Position SheetItem)
 sheets (Document { sheetsBefore, currentSheet, sheetsAfter }) =
     L.concat
         [ L.map Before sheetsBefore
@@ -65,46 +82,43 @@ sheets (Document { sheetsBefore, currentSheet, sheetsAfter }) =
 selectSheet : Name -> Document -> Result Error Document
 selectSheet selectedName (Document data) =
     let
-        empty =
-            { data
-                | currentSheet = selectedName
-                , sheetsBefore = []
-                , sheetsAfter = []
-            }
-
-        process sheet ( found, d ) =
-            if sheet == selectedName then
-                ( True, d )
+        process sheet ( before, current, after ) =
+            if sheet.name == selectedName then
+                ( before, Just sheet, after )
 
             else
-                ( found
-                , if found then
-                    { d | sheetsAfter = sheet :: d.sheetsAfter }
+                case current of
+                    Just _ ->
+                        ( before, current, L.append after [ sheet ] )
 
-                  else
-                    { d | sheetsBefore = sheet :: d.sheetsBefore }
-                )
+                    Nothing ->
+                        ( L.append before [ sheet ], current, after )
 
-        ( foundBefore, processedBefore ) =
-            L.foldl process ( False, empty ) data.sheetsBefore
-
-        ( foundSheet, processed ) =
+        ( newBefore, newCurrent, newAfter ) =
             L.foldl process
-                ( foundBefore, processedBefore )
+                (L.foldl process ( [], Nothing, [] ) data.sheetsBefore)
                 (data.currentSheet :: data.sheetsAfter)
     in
-    if foundSheet then
-        Ok (Document processed)
+    case newCurrent of
+        Just current ->
+            Ok
+                (Document
+                    { data
+                        | currentSheet = current
+                        , sheetsBefore = newBefore
+                        , sheetsAfter = newAfter
+                    }
+                )
 
-    else
-        Err (UndefinedSheetError selectedName)
+        Nothing ->
+            Err (UndefinedSheetError selectedName)
 
 
 sheetExists : Name -> DocData -> Bool
 sheetExists name data =
-    L.member name data.sheetsBefore
-        || L.member name data.sheetsAfter
-        || (name == data.currentSheet)
+    L.member name (L.map .name data.sheetsBefore)
+        || L.member name (L.map .name data.sheetsAfter)
+        || (name == data.currentSheet.name)
 
 
 insertSheet : Name -> Document -> Result Error Document
@@ -116,13 +130,13 @@ insertSheet name (Document data) =
         Ok <|
             Document
                 { data
-                    | sheetsAfter = L.append data.sheetsAfter [ name ]
+                    | sheetsAfter = L.append data.sheetsAfter [ gridSheetItem name ]
                 }
 
 
 removeSheet : Name -> Document -> Result Error Document
 removeSheet name (Document d) =
-    if name == d.currentSheet then
+    if name == d.currentSheet.name then
         case ( d.sheetsBefore, d.sheetsAfter ) of
             ( _, head :: tail ) ->
                 Ok <| Document { d | currentSheet = head, sheetsAfter = tail }
@@ -137,8 +151,8 @@ removeSheet name (Document d) =
         Ok <|
             Document
                 { d
-                    | sheetsBefore = L.filter ((/=) name) d.sheetsBefore
-                    , sheetsAfter = L.filter ((/=) name) d.sheetsAfter
+                    | sheetsBefore = L.filter (.name >> (/=) name) d.sheetsBefore
+                    , sheetsAfter = L.filter (.name >> (/=) name) d.sheetsAfter
                     , cells =
                         d.cells
                             |> D.filter (\( sheet, _ ) _ -> sheet /= name)
@@ -151,15 +165,18 @@ removeSheet name (Document d) =
 renameSheet : Name -> Name -> Document -> Result Error Document
 renameSheet name newName (Document data) =
     let
-        mapSheets f d =
+        updateName f item =
+            { item | name = f item.name }
+
+        mapSheetNames f d =
             let
                 renameCells ( sheetName, cellName ) cell renamed =
                     D.insert ( f sheetName, cellName ) (Cell.renameSheets f cell) renamed
             in
             { d
-                | currentSheet = f d.currentSheet
-                , sheetsBefore = L.map f d.sheetsBefore
-                , sheetsAfter = L.map f d.sheetsAfter
+                | currentSheet = updateName f d.currentSheet
+                , sheetsBefore = L.map (updateName f) d.sheetsBefore
+                , sheetsAfter = L.map (updateName f) d.sheetsAfter
                 , cells = D.foldr renameCells D.empty d.cells
             }
     in
@@ -174,15 +191,15 @@ renameSheet name newName (Document data) =
             parseName newName
                 |> R.mapError (always InvalidSheetNameError)
                 |> R.map
-                    (\n ->
+                    (\parsedName ->
                         Document <|
-                            mapSheets
-                                (\sheet ->
-                                    if sheet == name then
-                                        n
+                            mapSheetNames
+                                (\currentName ->
+                                    if currentName == name then
+                                        parsedName
 
                                     else
-                                        sheet
+                                        currentName
                                 )
                                 data
                     )
@@ -196,13 +213,13 @@ insert : Name -> String -> Document -> Document
 insert cellName value (Document d) =
     case value of
         "" ->
-            Document { d | cells = D.remove ( d.currentSheet, cellName ) d.cells }
+            Document { d | cells = D.remove ( d.currentSheet.name, cellName ) d.cells }
 
         _ ->
             Document
                 { d
                     | cells =
-                        D.insert ( d.currentSheet, cellName )
+                        D.insert ( d.currentSheet.name, cellName )
                             (Cell.fromSource value)
                             d.cells
                 }
@@ -225,12 +242,12 @@ getCell sheetName cellName data =
 
 cellSource : Name -> Document -> Result Error String
 cellSource cellName (Document d) =
-    getCell d.currentSheet cellName d |> R.map Cell.source
+    getCell d.currentSheet.name cellName d |> R.map Cell.source
 
 
 get : Name -> Document -> ValueOrError
 get name (Document d) =
-    evalCell ( d.currentSheet, name ) D.empty d |> T.first
+    evalCell ( d.currentSheet.name, name ) D.empty d |> T.first
 
 
 type alias Memo =

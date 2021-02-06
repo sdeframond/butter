@@ -1,24 +1,24 @@
 TODO
 ====
 
+- Feature : Pivot tables
+- Feature : Save to file (and load file)
+- Feature : Local storage
+- Feature : Functions (which ones ?)
 - Feature : Support large sheets (#row and col > 1_000_000)
 - Feature : Cancel cell edition with Echap
 - Feature : Cancel sheet edition with Echap
-- Feature : Support for tables
-- Feature : Pivot tables
 - Feature : CSV import
 - Feature : Copy/paste (bonus : suport copy-parting from Excel)
-- Feature : Save to file (and load file)
-- Feature : Local storage
 - Feature : More operators (* , ^, /, unary +, ++ on strings) and parenthesis 
 - Feature : Re-order sheets
 - Feature : Support floating precision numbers
-- Feature : Functions (which ones ?)
 
 
 DOING
 =====
 
+- Feature : Support for tables
 
 DONE
 ====

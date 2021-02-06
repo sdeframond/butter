@@ -20,6 +20,15 @@ suite =
 
         expectError val res =
             Expect.equal res (Err val)
+
+        before =
+            gridSheetItem >> Before
+
+        after =
+            gridSheetItem >> After
+
+        current =
+            gridSheetItem >> Current
     in
     describe "Document"
         [ describe "insert"
@@ -46,15 +55,19 @@ suite =
             ]
         , describe "sheets"
             [ test "returns all sheets" <|
-                \_ -> Expect.equal (sheets <| singleSheet "sheet") [ Current "sheet" ]
+                \_ -> Expect.equal (sheets <| singleSheet "sheet") [ current "sheet" ]
             ]
         , describe "selectSheet"
-            [ test "selects a sheet" <|
+            [ test "selects a sheet and preserves sheet order" <|
                 \_ ->
-                    expectOk [ Before "sheet", Current "sheet2", After "sheet3" ]
+                    expectOk [ before "sheet", current "sheet2", after "sheet3", after "sheet4" ]
                         (singleSheet "sheet"
                             |> insertSheet "sheet2"
                             |> R.andThen (insertSheet "sheet3")
+                            |> R.andThen (insertSheet "sheet4")
+                            -- select twice to make sure the sheet order before
+                            -- and after is preserved
+                            |> R.andThen (selectSheet "sheet4")
                             |> R.andThen (selectSheet "sheet2")
                             |> R.map sheets
                         )
@@ -68,7 +81,7 @@ suite =
         , describe "insertSheet"
             [ test "should insert a sheet" <|
                 \_ ->
-                    expectOk [ Current "sheet", After "toto" ]
+                    expectOk [ current "sheet", after "toto" ]
                         (singleSheet "sheet" |> insertSheet "toto" |> R.map sheets)
             , test "cannot create duplicates" <|
                 \_ ->
@@ -78,7 +91,7 @@ suite =
         , describe "removeSheet"
             [ test "removes a given sheet" <|
                 \_ ->
-                    expectOk [ Current "toto" ]
+                    expectOk [ current "toto" ]
                         (singleSheet "sheet"
                             |> insertSheet "toto"
                             |> R.andThen (removeSheet "sheet")
@@ -112,7 +125,7 @@ suite =
         , describe "renameSheet"
             [ test "renames a sheet" <|
                 \_ ->
-                    Expect.equal (Ok [ Current "renamed" ])
+                    Expect.equal (Ok [ current "renamed" ])
                         (singleSheet "sheet"
                             |> renameSheet "sheet" "renamed"
                             |> R.map sheets
@@ -125,7 +138,7 @@ suite =
                         )
             , test "renames only one sheet" <|
                 \_ ->
-                    expectOk [ Current "sheet1", After "renamed", After "sheet3" ]
+                    expectOk [ current "sheet1", after "renamed", after "sheet3" ]
                         (singleSheet "sheet1"
                             |> insertSheet "sheet2"
                             |> R.andThen (insertSheet "sheet3")

@@ -352,7 +352,7 @@ sheetSelector model =
                         ]
             in
             case ( item, model.edit ) of
-                ( Current name, EditingSheet oldName newName ) ->
+                ( Current { name }, EditingSheet oldName newName ) ->
                     li [ itemCss ]
                         [ input
                             [ value newName
@@ -361,13 +361,13 @@ sheetSelector model =
                             []
                         ]
 
-                ( Current name, _ ) ->
+                ( Current { name }, _ ) ->
                     defaultItem name True
 
-                ( Before name, _ ) ->
+                ( Before { name }, _ ) ->
                     defaultItem name False
 
-                ( After name, _ ) ->
+                ( After { name }, _ ) ->
                     defaultItem name False
 
         addSheet =
