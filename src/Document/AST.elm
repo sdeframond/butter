@@ -120,11 +120,14 @@ root : Parser AST
 root =
     let
         var =
-            variable
-                { start = \c -> c /= '='
-                , inner = \c -> True
-                , reserved = Set.empty
-                }
+            oneOf
+                [ variable
+                    { start = \c -> c /= '='
+                    , inner = \c -> True
+                    , reserved = Set.empty
+                    }
+                , succeed ""
+                ]
     in
     oneOf
         [ succeed Formula
@@ -176,12 +179,12 @@ term : Parser FormulaAST
 term =
     succeed identity
         |= oneOf
-            [ map (Literal << IntValue) myInt
+            [ reference
+            , map (Literal << IntValue) myInt
             , succeed (Literal << StringValue)
                 |. symbol "\""
                 |= variable { start = \c -> True, inner = \c -> c /= '"', reserved = Set.empty }
                 |. symbol "\""
-            , reference
             ]
         |. spaces
 

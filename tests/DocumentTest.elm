@@ -184,16 +184,16 @@ suite =
                 \_ ->
                     expectOk (IntValue -7)
                         (get "a" <| fromList "sheet" [ ( "a", "=1+1-10+1" ) ])
-            , fuzz (tuple ( int, int )) "Fuzzing substraction" <|
-                \( i, j ) ->
+            , fuzz2 int int "Fuzzing substraction" <|
+                \i j ->
                     let
                         doc =
                             fromList "sheet"
                                 [ ( "a", String.concat [ "=", String.fromInt i, "-", String.fromInt j ] ) ]
                     in
                     expectOk (IntValue (i - j)) (get "a" doc)
-            , fuzz (tuple ( int, int )) "Fuzzing addition" <|
-                \( i, j ) ->
+            , fuzz2 int int "Fuzzing addition" <|
+                \i j ->
                     let
                         doc =
                             fromList "sheet"
