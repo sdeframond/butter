@@ -5,10 +5,7 @@ import Css exposing (..)
 import Css.Global as Global
 import Dict as D exposing (Dict)
 import Document as Doc exposing (Sheet(..))
-import Document.Grid as Grid exposing (Grid)
-import Document.Table as Table
 import Document.Types exposing (Error(..), Name, Position(..), Value(..), ValueOrError)
-import Html
 import Html.Styled as H exposing (..)
 import Html.Styled.Attributes exposing (css, value)
 import Html.Styled.Events exposing (onClick, onDoubleClick, onInput)
@@ -79,19 +76,15 @@ initModel =
 -------------------------------------------------------------------------------
 
 
-type
-    Msg
-    --= EditCell Name String
-    --| UpdateEdit EditStatus
+type Msg
     = InsertGridSheet
     | InsertTableSheet
     | SelectSheet Name
     | RemoveSheet Name
     | EditSheet Name
     | UpdateSheetName Name
-    | SetTableState Table.State
-    | GridMsg Grid
-    | GridCommitMsg Grid
+    | DocMsg Doc.Msg
+    | DocCommitMsg Doc.Msg
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -166,14 +159,11 @@ updateModel msg model =
                             model.edit
             }
 
-        SetTableState s ->
-            { model | doc = Doc.updateTable s model.doc }
+        DocMsg docMsg ->
+            { model | doc = Doc.update docMsg model.doc }
 
-        GridMsg grid ->
-            { model | doc = Doc.updateGrid grid model.doc }
-
-        GridCommitMsg grid ->
-            { commited | doc = Doc.updateGrid grid commited.doc }
+        DocCommitMsg docMsg ->
+            { commited | doc = Doc.update docMsg commited.doc }
 
 
 
@@ -196,11 +186,9 @@ subscriptions model =
 view : Model -> Browser.Document Msg
 view model =
     let
-        gridConfig =
-            { toMsg = GridMsg
-            , commitMsg = GridCommitMsg
-            , getCellValue = \name -> Doc.get name model.doc
-            , getCellSource = \name -> Doc.cellSource name model.doc |> R.withDefault ""
+        docConfig =
+            { toMsg = DocMsg
+            , toCommitMsg = DocCommitMsg
             }
     in
     { title = "Butter Spreadsheet"
@@ -214,20 +202,7 @@ view model =
                     , height (pct 100)
                     ]
                 ]
-            , div
-                [ css
-                    [ width (pct 100)
-                    , height (pct 100)
-                    , overflow hidden
-                    ]
-                ]
-                [ case Doc.currentSheet model.doc of
-                    GridSheet grid ->
-                        Grid.view gridConfig grid
-
-                    TableSheet table ->
-                        fromUnstyled (Table.view SetTableState table)
-                ]
+            , Doc.view docConfig model.doc
             , sheetSelector model
             ]
     }

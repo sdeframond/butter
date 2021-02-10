@@ -1,9 +1,9 @@
 module Document exposing
     ( Document
+    , Msg
     , Sheet(..)
     , cellSource
     , commitEdit
-    , currentSheet
     ,  fromList
        -- Not used but useful for testing.
        -- TODO: find a way to test without it.
@@ -21,11 +21,12 @@ module Document exposing
     , sheetNames
     , singleSheet
     , tableSheet
-    , updateGrid
-    , updateTable
+    , update
+    , view
     )
 
 import Char exposing (isUpper)
+import Css exposing (..)
 import Debug exposing (log)
 import Dict as D exposing (Dict)
 import Document.AST as AST
@@ -38,7 +39,9 @@ import Document.AST as AST
 import Document.Cell as Cell exposing (Cell)
 import Document.Grid as Grid exposing (Grid)
 import Document.Table as Table exposing (Table)
-import Document.Types exposing (..)
+import Document.Types as Types exposing (..)
+import Html.Styled as H exposing (..)
+import Html.Styled.Attributes exposing (css)
 import List as L
 import Maybe as M
 import Result as R
@@ -59,8 +62,8 @@ type alias DocData =
 
 
 type alias SheetItem =
-    { sheet : Sheet
-    , name : String
+    { name : String
+    , sheet : Sheet
     }
 
 
@@ -79,39 +82,29 @@ tableSheet =
     TableSheet Table.empty
 
 
-updateTable : Table.State -> Document -> Document
-updateTable s (Document data) =
+type Msg
+    = GridMsg Grid
+    | TableMsg Table.State
+
+
+update : Msg -> Document -> Document
+update msg (Document data) =
     let
-        upd item table =
-            { item
-                | sheet =
-                    TableSheet <|
-                        Table.update s table
-            }
+        { sheet, name } =
+            data.currentSheetItem
     in
     Document <|
-        case data.currentSheetItem.sheet of
-            TableSheet table ->
+        case ( msg, sheet ) of
+            ( GridMsg grid, GridSheet _ ) ->
+                { data | currentSheetItem = SheetItem name (GridSheet grid) }
+
+            ( TableMsg state, TableSheet table ) ->
                 { data
-                    | currentSheetItem = upd data.currentSheetItem table
+                    | currentSheetItem =
+                        SheetItem name (TableSheet <| Table.update state table)
                 }
 
-            _ ->
-                data
-
-
-updateGrid : Grid -> Document -> Document
-updateGrid grid (Document ({ currentSheetItem } as data)) =
-    let
-        newItem =
-            { currentSheetItem | sheet = GridSheet grid }
-    in
-    Document <|
-        case data.currentSheetItem.sheet of
-            GridSheet _ ->
-                { data | currentSheetItem = newItem }
-
-            _ ->
+            ( _, _ ) ->
                 data
 
 
@@ -144,13 +137,13 @@ singleSheet : Name -> Document
 singleSheet name =
     Document
         { cells = D.empty
-        , currentSheetItem = SheetItem gridSheet name
+        , currentSheetItem = SheetItem name gridSheet
         , sheetItemsBefore = []
         , sheetItemsAfter = []
         }
 
 
-sheetNames : Document -> List (Position Name)
+sheetNames : Document -> List (Types.Position Name)
 sheetNames (Document { sheetItemsBefore, currentSheetItem, sheetItemsAfter }) =
     L.concat
         [ L.map (.name >> Before) sheetItemsBefore
@@ -215,7 +208,7 @@ insertSheet name sheet (Document data) =
         Ok <|
             Document
                 { data
-                    | sheetItemsAfter = L.append data.sheetItemsAfter [ SheetItem sheet name ]
+                    | sheetItemsAfter = L.append data.sheetItemsAfter [ SheetItem name sheet ]
                 }
 
 
@@ -425,3 +418,35 @@ evalHelp ancestors name memo_ data =
                                     v
                        )
                     |> memoize
+
+
+type alias Config msg =
+    { toMsg : Msg -> msg
+    , toCommitMsg : Msg -> msg
+    }
+
+
+view : Config msg -> Document -> Html msg
+view { toMsg, toCommitMsg } ((Document { currentSheetItem }) as doc) =
+    let
+        gridConfig =
+            { toMsg = GridMsg >> toMsg
+            , commitMsg = GridMsg >> toCommitMsg
+            , getCellValue = \name -> get name doc
+            , getCellSource = \name -> cellSource name doc |> R.withDefault ""
+            }
+    in
+    div
+        [ css
+            [ width (pct 100)
+            , height (pct 100)
+            , overflow hidden
+            ]
+        ]
+        [ case currentSheetItem.sheet of
+            GridSheet grid ->
+                Grid.view gridConfig grid
+
+            TableSheet table ->
+                fromUnstyled (Table.view (TableMsg >> toMsg) table)
+        ]

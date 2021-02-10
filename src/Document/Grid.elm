@@ -2,10 +2,9 @@ module Document.Grid exposing (Config, Grid, commit, init, view)
 
 import Css exposing (..)
 import Document.Types exposing (Error(..), Name, Value(..), ValueOrError)
-import Html
 import Html.Styled as H exposing (..)
 import Html.Styled.Attributes exposing (css, value)
-import Html.Styled.Events exposing (onClick, onDoubleClick, onInput)
+import Html.Styled.Events exposing (onClick, onInput)
 import List as L
 import String as S
 
