@@ -116,22 +116,23 @@ updateModel msg model =
                 NotEditing ->
                     { model | doc = Doc.commitEdit model.doc }
 
-        insertSheet constructor =
+        insertSheet sheet =
             { model
                 | doc =
                     R.withDefault model.doc <|
                         Doc.insertSheet
-                            (constructor <| "Sheet" ++ String.fromInt model.sheetCounter)
+                            ("Sheet" ++ String.fromInt model.sheetCounter)
+                            sheet
                             model.doc
                 , sheetCounter = model.sheetCounter + 1
             }
     in
     case Debug.log "update msg" msg of
         InsertGridSheet ->
-            insertSheet Doc.gridSheetItem
+            insertSheet Doc.gridSheet
 
         InsertTableSheet ->
-            insertSheet Doc.tableSheetItem
+            insertSheet Doc.tableSheet
 
         SelectSheet name ->
             { commited
@@ -242,7 +243,7 @@ sheetSelector model =
                 , padding2 (px 5) (px 5)
                 ]
 
-        sheetItem item =
+        sheetItem positionedName =
             let
                 defaultItem name isCurrent =
                     li
@@ -262,8 +263,8 @@ sheetSelector model =
                             [ text "[x]" ]
                         ]
             in
-            case ( item, model.edit ) of
-                ( Current { name }, EditingSheetName oldName newName ) ->
+            case ( positionedName, model.edit ) of
+                ( Current name, EditingSheetName oldName newName ) ->
                     li [ itemCss ]
                         [ input
                             [ value newName
@@ -272,13 +273,13 @@ sheetSelector model =
                             []
                         ]
 
-                ( Current { name }, _ ) ->
+                ( Current name, _ ) ->
                     defaultItem name True
 
-                ( Before { name }, _ ) ->
+                ( Before name, _ ) ->
                     defaultItem name False
 
-                ( After { name }, _ ) ->
+                ( After name, _ ) ->
                     defaultItem name False
 
         addGridSheet =
@@ -304,5 +305,5 @@ sheetSelector model =
         ]
         (addTableSheet
             :: addGridSheet
-            :: (Doc.sheets model.doc |> L.map sheetItem)
+            :: (Doc.sheetNames model.doc |> L.map sheetItem)
         )

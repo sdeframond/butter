@@ -9,7 +9,7 @@ module Document exposing
        -- TODO: find a way to test without it.
 
     , get
-    , gridSheetItem
+    , gridSheet
     ,  insert
        -- Not used but useful for testing.
        -- TODO: find a way to test without it.
@@ -18,9 +18,9 @@ module Document exposing
     , removeSheet
     , renameSheet
     , selectSheet
-    , sheets
+    , sheetNames
     , singleSheet
-    , tableSheetItem
+    , tableSheet
     , updateGrid
     , updateTable
     )
@@ -69,14 +69,14 @@ type Sheet
     | TableSheet Table
 
 
-gridSheetItem : Name -> SheetItem
-gridSheetItem =
-    SheetItem (GridSheet Grid.init)
+gridSheet : Sheet
+gridSheet =
+    GridSheet Grid.init
 
 
-tableSheetItem : Name -> SheetItem
-tableSheetItem =
-    SheetItem (TableSheet Table.empty)
+tableSheet : Sheet
+tableSheet =
+    TableSheet Table.empty
 
 
 updateTable : Table.State -> Document -> Document
@@ -144,18 +144,18 @@ singleSheet : Name -> Document
 singleSheet name =
     Document
         { cells = D.empty
-        , currentSheetItem = gridSheetItem name
+        , currentSheetItem = SheetItem gridSheet name
         , sheetItemsBefore = []
         , sheetItemsAfter = []
         }
 
 
-sheets : Document -> List (Position SheetItem)
-sheets (Document { sheetItemsBefore, currentSheetItem, sheetItemsAfter }) =
+sheetNames : Document -> List (Position Name)
+sheetNames (Document { sheetItemsBefore, currentSheetItem, sheetItemsAfter }) =
     L.concat
-        [ L.map Before sheetItemsBefore
-        , [ Current currentSheetItem ]
-        , L.map After sheetItemsAfter
+        [ L.map (.name >> Before) sheetItemsBefore
+        , [ Current currentSheetItem.name ]
+        , L.map (.name >> After) sheetItemsAfter
         ]
 
 
@@ -206,16 +206,16 @@ sheetExists name data =
         || (name == data.currentSheetItem.name)
 
 
-insertSheet : SheetItem -> Document -> Result Error Document
-insertSheet item (Document data) =
-    if sheetExists item.name data then
-        Err (DuplicateSheetNameError item.name)
+insertSheet : Name -> Sheet -> Document -> Result Error Document
+insertSheet name sheet (Document data) =
+    if sheetExists name data then
+        Err (DuplicateSheetNameError name)
 
     else
         Ok <|
             Document
                 { data
-                    | sheetItemsAfter = L.append data.sheetItemsAfter [ item ]
+                    | sheetItemsAfter = L.append data.sheetItemsAfter [ SheetItem sheet name ]
                 }
 
 

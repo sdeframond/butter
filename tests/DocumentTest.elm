@@ -20,15 +20,6 @@ suite =
 
         expectError val res =
             Expect.equal res (Err val)
-
-        before =
-            gridSheetItem >> Before
-
-        after =
-            gridSheetItem >> After
-
-        current =
-            gridSheetItem >> Current
     in
     describe "Document"
         [ describe "cellSource"
@@ -47,15 +38,15 @@ suite =
                 \_ ->
                     let
                         doc =
-                            singleSheet "sheet1" |> insertSheet (gridSheetItem "sheet2")
+                            singleSheet "sheet1" |> insertSheet "sheet2" gridSheet
                     in
                     Expect.equal
-                        (R.map sheets doc)
-                        (R.map (insert "a" "1") doc |> R.map sheets)
+                        (R.map sheetNames doc)
+                        (R.map (insert "a" "1") doc |> R.map sheetNames)
             ]
-        , describe "sheets"
+        , describe "sheetNames"
             [ test "returns all sheets" <|
-                \_ -> Expect.equal (sheets <| singleSheet "sheet") [ current "sheet" ]
+                \_ -> Expect.equal [ Current "sheet" ] (sheetNames <| singleSheet "sheet")
             ]
 
         --, describe "currentSheet"
@@ -65,16 +56,16 @@ suite =
         , describe "selectSheet"
             [ test "selects a sheet and preserves sheet order" <|
                 \_ ->
-                    expectOk [ before "sheet", current "sheet2", after "sheet3", after "sheet4" ]
+                    expectOk [ Before "sheet", Current "sheet2", After "sheet3", After "sheet4" ]
                         (singleSheet "sheet"
-                            |> insertSheet (gridSheetItem "sheet2")
-                            |> R.andThen (insertSheet (gridSheetItem "sheet3"))
-                            |> R.andThen (insertSheet (gridSheetItem "sheet4"))
+                            |> insertSheet "sheet2" gridSheet
+                            |> R.andThen (insertSheet "sheet3" gridSheet)
+                            |> R.andThen (insertSheet "sheet4" gridSheet)
                             -- select twice to make sure the sheet order before
                             -- and after is preserved
                             |> R.andThen (selectSheet "sheet4")
                             |> R.andThen (selectSheet "sheet2")
-                            |> R.map sheets
+                            |> R.map sheetNames
                         )
             , test "returns an error if the selected sheet does not exist" <|
                 \_ ->
@@ -86,27 +77,27 @@ suite =
         , describe "insertSheet"
             [ test "should insert a sheet" <|
                 \_ ->
-                    expectOk [ current "sheet", after "toto" ]
-                        (singleSheet "sheet" |> insertSheet (gridSheetItem "toto") |> R.map sheets)
+                    expectOk [ Current "sheet", After "toto" ]
+                        (singleSheet "sheet" |> insertSheet "toto" gridSheet |> R.map sheetNames)
             , test "cannot create duplicates" <|
                 \_ ->
                     expectError (DuplicateSheetNameError "sheet")
-                        (singleSheet "sheet" |> insertSheet (gridSheetItem "sheet"))
+                        (singleSheet "sheet" |> insertSheet "sheet" gridSheet)
             ]
         , describe "removeSheet"
             [ test "removes a given sheet" <|
                 \_ ->
-                    expectOk [ current "toto" ]
+                    expectOk [ Current "toto" ]
                         (singleSheet "sheet"
-                            |> insertSheet (gridSheetItem "toto")
+                            |> insertSheet "toto" gridSheet
                             |> R.andThen (removeSheet "sheet")
-                            |> R.map sheets
+                            |> R.map sheetNames
                         )
             , test "does not removes the other sheets' cells" <|
                 \_ ->
                     expectOk (StringValue "1")
                         (singleSheet "sheet"
-                            |> insertSheet (gridSheetItem "otherSheet")
+                            |> insertSheet "otherSheet" gridSheet
                             |> R.andThen (selectSheet "otherSheet")
                             |> R.map (insert "a" "1")
                             |> R.andThen (removeSheet "sheet")
@@ -116,7 +107,7 @@ suite =
                 \_ ->
                     expectError (UndefinedSheetError "toto")
                         (singleSheet "sheet"
-                            |> insertSheet (gridSheetItem "toto")
+                            |> insertSheet "toto" gridSheet
                             |> R.andThen (removeSheet "toto")
                             |> R.andThen (removeSheet "toto")
                         )
@@ -130,10 +121,10 @@ suite =
         , describe "renameSheet"
             [ test "renames a sheet" <|
                 \_ ->
-                    Expect.equal (Ok [ current "renamed" ])
+                    Expect.equal (Ok [ Current "renamed" ])
                         (singleSheet "sheet"
                             |> renameSheet "sheet" "renamed"
-                            |> R.map sheets
+                            |> R.map sheetNames
                         )
             , test "renames only if the sheet exists" <|
                 \_ ->
@@ -143,18 +134,18 @@ suite =
                         )
             , test "renames only one sheet" <|
                 \_ ->
-                    expectOk [ current "sheet1", after "renamed", after "sheet3" ]
+                    expectOk [ Current "sheet1", After "renamed", After "sheet3" ]
                         (singleSheet "sheet1"
-                            |> insertSheet (gridSheetItem "sheet2")
-                            |> R.andThen (insertSheet (gridSheetItem "sheet3"))
+                            |> insertSheet "sheet2" gridSheet
+                            |> R.andThen (insertSheet "sheet3" gridSheet)
                             |> R.andThen (renameSheet "sheet2" "renamed")
-                            |> R.map sheets
+                            |> R.map sheetNames
                         )
             , test "enforces name unicity" <|
                 \_ ->
                     expectError (DuplicateSheetNameError "sheet2")
                         (singleSheet "sheet"
-                            |> insertSheet (gridSheetItem "sheet2")
+                            |> insertSheet "sheet2" gridSheet
                             |> R.andThen (renameSheet "sheet" "sheet2")
                         )
             , test "enforces name format" <|
@@ -248,7 +239,7 @@ suite =
                 \_ ->
                     expectOk (StringValue "1")
                         (fromList "sheet1" [ ( "a", "=sheet2.b" ) ]
-                            |> insertSheet (gridSheetItem "sheet2")
+                            |> insertSheet "sheet2" gridSheet
                             |> R.andThen (selectSheet "sheet2")
                             |> R.map (insert "b" "1")
                             |> R.andThen (selectSheet "sheet1")
