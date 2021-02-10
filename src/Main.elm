@@ -1,12 +1,11 @@
 module Main exposing (..)
 
---import Html exposing (Html, table, td, text, th, tr)
-
 import Browser
 import Css exposing (..)
 import Css.Global as Global
 import Dict as D exposing (Dict)
 import Document as Doc exposing (Sheet(..))
+import Document.Grid as Grid exposing (Grid)
 import Document.Table as Table
 import Document.Types exposing (Error(..), Name, Position(..), Value(..), ValueOrError)
 import Html
@@ -44,8 +43,7 @@ type alias Model =
 
 type EditStatus
     = NotEditing
-    | EditingSheet Name Name
-    | EditingCell Name String
+    | EditingSheetName Name Name
 
 
 type alias Col =
@@ -81,16 +79,19 @@ initModel =
 -------------------------------------------------------------------------------
 
 
-type Msg
-    = EditCell Name String
-    | UpdateEdit EditStatus
-    | InsertGridSheet
+type
+    Msg
+    --= EditCell Name String
+    --| UpdateEdit EditStatus
+    = InsertGridSheet
     | InsertTableSheet
     | SelectSheet Name
     | RemoveSheet Name
     | EditSheet Name
     | UpdateSheetName Name
     | SetTableState Table.State
+    | GridMsg Grid
+    | GridCommitMsg Grid
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -101,24 +102,19 @@ update msg model =
 updateModel : Msg -> Model -> Model
 updateModel msg model =
     let
-        commitEdit =
+        commited =
             case model.edit of
-                EditingSheet oldName newName ->
+                EditingSheetName oldName newName ->
                     { model
                         | edit = NotEditing
                         , doc =
                             Doc.renameSheet oldName newName model.doc
                                 |> R.withDefault model.doc
-                    }
-
-                EditingCell name str ->
-                    { model
-                        | edit = NotEditing
-                        , doc = Doc.insert name str model.doc
+                                |> Doc.commitEdit
                     }
 
                 NotEditing ->
-                    model
+                    { model | doc = Doc.commitEdit model.doc }
 
         insertSheet constructor =
             { model
@@ -131,12 +127,6 @@ updateModel msg model =
             }
     in
     case Debug.log "update msg" msg of
-        EditCell name str ->
-            { commitEdit | edit = EditingCell name str }
-
-        UpdateEdit edit ->
-            { model | edit = edit }
-
         InsertGridSheet ->
             insertSheet Doc.gridSheetItem
 
@@ -144,32 +134,32 @@ updateModel msg model =
             insertSheet Doc.tableSheetItem
 
         SelectSheet name ->
-            { commitEdit
+            { commited
                 | doc =
-                    Doc.selectSheet name commitEdit.doc
-                        |> R.withDefault commitEdit.doc
+                    Doc.selectSheet name commited.doc
+                        |> R.withDefault commited.doc
             }
 
         RemoveSheet name ->
             let
                 doc =
-                    Doc.removeSheet name commitEdit.doc
+                    Doc.removeSheet name commited.doc
             in
-            { commitEdit
+            { commited
                 | doc =
-                    Doc.removeSheet name commitEdit.doc
-                        |> R.withDefault commitEdit.doc
+                    Doc.removeSheet name commited.doc
+                        |> R.withDefault commited.doc
             }
 
         EditSheet name ->
-            { commitEdit | edit = EditingSheet name name }
+            { commited | edit = EditingSheetName name name }
 
         UpdateSheetName name ->
             { model
                 | edit =
                     case model.edit of
-                        EditingSheet oldName _ ->
-                            EditingSheet oldName name
+                        EditingSheetName oldName _ ->
+                            EditingSheetName oldName name
 
                         _ ->
                             model.edit
@@ -177,6 +167,12 @@ updateModel msg model =
 
         SetTableState s ->
             { model | doc = Doc.updateTable s model.doc }
+
+        GridMsg grid ->
+            { model | doc = Doc.updateGrid grid model.doc }
+
+        GridCommitMsg grid ->
+            { commited | doc = Doc.updateGrid grid commited.doc }
 
 
 
@@ -198,6 +194,14 @@ subscriptions model =
 
 view : Model -> Browser.Document Msg
 view model =
+    let
+        gridConfig =
+            { toMsg = GridMsg
+            , commitMsg = GridCommitMsg
+            , getCellValue = \name -> Doc.get name model.doc
+            , getCellSource = \name -> Doc.cellSource name model.doc |> R.withDefault ""
+            }
+    in
     { title = "Butter Spreadsheet"
     , body =
         L.map toUnstyled
@@ -217,8 +221,8 @@ view model =
                     ]
                 ]
                 [ case Doc.currentSheet model.doc of
-                    GridSheet ->
-                        gridSheetView model
+                    GridSheet grid ->
+                        Grid.view gridConfig grid
 
                     TableSheet table ->
                         fromUnstyled (Table.view SetTableState table)
@@ -226,124 +230,6 @@ view model =
             , sheetSelector model
             ]
     }
-
-
-gridSheetView : Model -> Html Msg
-gridSheetView model =
-    let
-        numberOfRow =
-            40
-
-        numberOfColumns =
-            20
-
-        valueToString val =
-            case val of
-                Err e ->
-                    case e of
-                        UndefinedNameError _ ->
-                            ""
-
-                        r ->
-                            Debug.toString r
-
-                Ok v ->
-                    case v of
-                        IntValue i ->
-                            String.fromInt i
-
-                        StringValue s ->
-                            s
-
-        toLetter i =
-            Char.fromCode (i - 1 + Char.toCode 'A') |> S.fromChar
-
-        mapColumns f =
-            L.range 1 numberOfColumns |> L.map f
-
-        blueGrey =
-            rgb 220 220 240
-
-        myTh =
-            styled th
-                [ backgroundColor blueGrey
-                , padding2 (Css.em 0.2) (Css.em 0.4)
-                , border3 (px 1) solid (rgb 150 150 150)
-                ]
-
-        columnHeaders =
-            th [] []
-                :: mapColumns
-                    (\col ->
-                        myTh [ css [ top (px 0) ] ] [ text <| toLetter col ]
-                    )
-
-        rowHeader row =
-            myTh [ css [ left (px 0), position sticky ] ] [ text <| S.fromInt row ]
-
-        cell row col =
-            let
-                name =
-                    [ col |> toLetter, row |> String.fromInt ]
-                        |> S.concat
-
-                defaultCell =
-                    td
-                        [ css_
-                        , onClick <|
-                            EditCell name
-                                (Doc.cellSource name model.doc |> R.withDefault "")
-                        ]
-                        [ Doc.get name model.doc
-                            |> valueToString
-                            |> text
-                        ]
-
-                css_ =
-                    css
-                        [ border3 (px 1) solid (rgb 230 230 230)
-                        , minWidth (Css.em 10)
-                        , height (px 20)
-                        ]
-            in
-            case model.edit of
-                EditingCell name_ str ->
-                    if name == name_ then
-                        td [ css_ ]
-                            [ input
-                                [ value str
-                                , onInput <| (EditingCell name >> UpdateEdit)
-                                ]
-                                []
-                            ]
-
-                    else
-                        defaultCell
-
-                _ ->
-                    defaultCell
-
-        rows =
-            L.range 1 numberOfRow
-                |> L.map
-                    (\row ->
-                        tr [] <|
-                            rowHeader row
-                                :: mapColumns (cell row)
-                    )
-    in
-    H.table
-        [ css
-            [ borderCollapse collapse
-            , width (pct 100)
-            , height (pct 100)
-            , display block
-            , overflow scroll
-            ]
-        ]
-        [ thead [ css [ position sticky, top (px 0) ] ] columnHeaders
-        , tbody [] rows
-        ]
 
 
 sheetSelector : Model -> Html Msg
@@ -377,7 +263,7 @@ sheetSelector model =
                         ]
             in
             case ( item, model.edit ) of
-                ( Current { name }, EditingSheet oldName newName ) ->
+                ( Current { name }, EditingSheetName oldName newName ) ->
                     li [ itemCss ]
                         [ input
                             [ value newName

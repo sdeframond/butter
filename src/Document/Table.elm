@@ -68,7 +68,7 @@ update s (Table data) =
     Table { data | state = s }
 
 
-view : (T.State -> msg) -> Table -> Html msg
+view : (State -> msg) -> Table -> Html msg
 view toMsg (Table { fields, rows, state }) =
     T.view (config toMsg fields) state rows
 

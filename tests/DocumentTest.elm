@@ -31,7 +31,13 @@ suite =
             gridSheetItem >> Current
     in
     describe "Document"
-        [ describe "insert"
+        [ describe "cellSource"
+            [ test "retrieves the source of a cell" <|
+                \_ ->
+                    expectOk "src"
+                        (fromList "sheet" [ ( "a", "src" ) ] |> cellSource "a")
+            ]
+        , describe "insert"
             [ test "is idempotent" <|
                 \_ ->
                     Expect.equal
@@ -47,20 +53,15 @@ suite =
                         (R.map sheets doc)
                         (R.map (insert "a" "1") doc |> R.map sheets)
             ]
-        , describe "cellSource"
-            [ test "retrieves the source of a cell" <|
-                \_ ->
-                    expectOk "src"
-                        (singleSheet "sheet" |> insert "a" "src" |> cellSource "a")
-            ]
         , describe "sheets"
             [ test "returns all sheets" <|
                 \_ -> Expect.equal (sheets <| singleSheet "sheet") [ current "sheet" ]
             ]
-        , describe "currentSheet"
-            [ test "returns the current sheet" <|
-                \_ -> singleSheet "sheet" |> currentSheet |> Expect.equal GridSheet
-            ]
+
+        --, describe "currentSheet"
+        --    [ test "returns the current sheet" <|
+        --        \_ -> singleSheet "sheet" |> currentSheet |> Expect.equal GridSheet
+        --    ]
         , describe "selectSheet"
             [ test "selects a sheet and preserves sheet order" <|
                 \_ ->
@@ -165,25 +166,25 @@ suite =
             , test "does not break cellSource" <|
                 \_ ->
                     expectOk "1"
-                        (singleSheet "sheet"
-                            |> insert "a" "1"
+                        (fromList "sheet"
+                            [ ( "a", "1" ) ]
                             |> renameSheet "sheet" "toto"
                             |> R.andThen (cellSource "a")
                         )
             , test "does not break get" <|
                 \_ ->
                     expectOk (StringValue "1")
-                        (singleSheet "sheet"
-                            |> insert "a" "1"
+                        (fromList "sheet" [ ( "a", "1" ) ]
                             |> renameSheet "sheet" "toto"
                             |> R.andThen (get "a")
                         )
             , test "does not affect references to that sheet" <|
                 \_ ->
                     expectOk (StringValue "1")
-                        (singleSheet "sheet"
-                            |> insert "a" "1"
-                            |> insert "b" "=sheet.a"
+                        (fromList "sheet"
+                            [ ( "a", "1" )
+                            , ( "b", "=sheet.a" )
+                            ]
                             |> renameSheet "sheet" "toto"
                             |> R.andThen (get "b")
                         )

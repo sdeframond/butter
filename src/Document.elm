@@ -1,14 +1,19 @@
 module Document exposing
     ( Document
     , Sheet(..)
-    ,  cellSource
-       --, commitEdit
-
+    , cellSource
+    , commitEdit
     , currentSheet
-    , fromList
+    ,  fromList
+       -- Not used but useful for testing.
+       -- TODO: find a way to test without it.
+
     , get
     , gridSheetItem
-    , insert
+    ,  insert
+       -- Not used but useful for testing.
+       -- TODO: find a way to test without it.
+
     , insertSheet
     , removeSheet
     , renameSheet
@@ -16,6 +21,7 @@ module Document exposing
     , sheets
     , singleSheet
     , tableSheetItem
+    , updateGrid
     , updateTable
     )
 
@@ -30,6 +36,7 @@ import Document.AST as AST
         , parseName
         )
 import Document.Cell as Cell exposing (Cell)
+import Document.Grid as Grid exposing (Grid)
 import Document.Table as Table exposing (Table)
 import Document.Types exposing (..)
 import List as L
@@ -58,13 +65,13 @@ type alias SheetItem =
 
 
 type Sheet
-    = GridSheet
+    = GridSheet Grid
     | TableSheet Table
 
 
 gridSheetItem : Name -> SheetItem
 gridSheetItem =
-    SheetItem GridSheet
+    SheetItem (GridSheet Grid.init)
 
 
 tableSheetItem : Name -> SheetItem
@@ -93,11 +100,51 @@ updateTable s (Document data) =
                 data
 
 
+updateGrid : Grid -> Document -> Document
+updateGrid grid (Document ({ currentSheetItem } as data)) =
+    let
+        newItem =
+            { currentSheetItem | sheet = GridSheet grid }
+    in
+    Document <|
+        case data.currentSheetItem.sheet of
+            GridSheet _ ->
+                { data | currentSheetItem = newItem }
+
+            _ ->
+                data
+
+
+commitEdit : Document -> Document
+commitEdit (Document ({ currentSheetItem } as data)) =
+    case currentSheetItem.sheet of
+        GridSheet grid ->
+            let
+                commiter editState =
+                    case editState of
+                        Nothing ->
+                            data
+
+                        Just ( name, src ) ->
+                            insertHelp name src data
+
+                newItem =
+                    { currentSheetItem | sheet = GridSheet newGrid }
+
+                ( newData, newGrid ) =
+                    Grid.commit commiter grid
+            in
+            Document { newData | currentSheetItem = newItem }
+
+        _ ->
+            Document data
+
+
 singleSheet : Name -> Document
 singleSheet name =
     Document
         { cells = D.empty
-        , currentSheetItem = { name = name, sheet = GridSheet }
+        , currentSheetItem = gridSheetItem name
         , sheetItemsBefore = []
         , sheetItemsAfter = []
         }
@@ -248,24 +295,28 @@ renameSheet name newName (Document data) =
 
 
 insert : Name -> String -> Document -> Document
-insert cellName value (Document d) =
+insert cellName value (Document data) =
+    Document <| insertHelp cellName value data
+
+
+insertHelp : Name -> String -> DocData -> DocData
+insertHelp cellName value d =
     case value of
         "" ->
-            Document { d | cells = D.remove ( d.currentSheetItem.name, cellName ) d.cells }
+            { d | cells = D.remove ( d.currentSheetItem.name, cellName ) d.cells }
 
         _ ->
-            Document
-                { d
-                    | cells =
-                        D.insert ( d.currentSheetItem.name, cellName )
-                            (Cell.fromSource value)
-                            d.cells
-                }
+            { d
+                | cells =
+                    D.insert ( d.currentSheetItem.name, cellName )
+                        (Cell.fromSource value)
+                        d.cells
+            }
 
 
 fromList : Name -> List ( String, String ) -> Document
 fromList sheet pairs =
-    List.foldl (\( a, b ) -> insert a b) (singleSheet sheet) pairs
+    List.foldl (\( a, b ) (Document data) -> Document <| insertHelp a b data) (singleSheet sheet) pairs
 
 
 getCell : Name -> Name -> DocData -> Result Error Cell
