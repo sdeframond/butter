@@ -6,7 +6,8 @@ import Browser
 import Css exposing (..)
 import Css.Global as Global
 import Dict as D exposing (Dict)
-import Document as Doc
+import Document as Doc exposing (Sheet(..))
+import Document.Table as Table
 import Document.Types exposing (Error(..), Name, Position(..), Value(..), ValueOrError)
 import Html
 import Html.Styled as H exposing (..)
@@ -83,11 +84,13 @@ initModel =
 type Msg
     = EditCell Name String
     | UpdateEdit EditStatus
-    | InsertSheet
+    | InsertGridSheet
+    | InsertTableSheet
     | SelectSheet Name
     | RemoveSheet Name
     | EditSheet Name
     | UpdateSheetName Name
+    | SetTableState Table.State
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -116,6 +119,16 @@ updateModel msg model =
 
                 NotEditing ->
                     model
+
+        insertSheet constructor =
+            { model
+                | doc =
+                    R.withDefault model.doc <|
+                        Doc.insertSheet
+                            (constructor <| "Sheet" ++ String.fromInt model.sheetCounter)
+                            model.doc
+                , sheetCounter = model.sheetCounter + 1
+            }
     in
     case Debug.log "update msg" msg of
         EditCell name str ->
@@ -124,15 +137,11 @@ updateModel msg model =
         UpdateEdit edit ->
             { model | edit = edit }
 
-        InsertSheet ->
-            { model
-                | doc =
-                    R.withDefault model.doc <|
-                        Doc.insertSheet
-                            ("Sheet" ++ String.fromInt model.sheetCounter)
-                            model.doc
-                , sheetCounter = model.sheetCounter + 1
-            }
+        InsertGridSheet ->
+            insertSheet Doc.gridSheetItem
+
+        InsertTableSheet ->
+            insertSheet Doc.tableSheetItem
 
         SelectSheet name ->
             { commitEdit
@@ -166,6 +175,9 @@ updateModel msg model =
                             model.edit
             }
 
+        SetTableState s ->
+            { model | doc = Doc.updateTable s model.doc }
+
 
 
 -------------------------------------------------------------------------------
@@ -197,14 +209,27 @@ view model =
                     , height (pct 100)
                     ]
                 ]
-            , tableView model
+            , div
+                [ css
+                    [ width (pct 100)
+                    , height (pct 100)
+                    , overflow hidden
+                    ]
+                ]
+                [ case Doc.currentSheet model.doc of
+                    GridSheet ->
+                        gridSheetView model
+
+                    TableSheet table ->
+                        fromUnstyled (Table.view SetTableState table)
+                ]
             , sheetSelector model
             ]
     }
 
 
-tableView : Model -> Html Msg
-tableView model =
+gridSheetView : Model -> Html Msg
+gridSheetView model =
     let
         numberOfRow =
             40
@@ -244,20 +269,17 @@ tableView model =
                 [ backgroundColor blueGrey
                 , padding2 (Css.em 0.2) (Css.em 0.4)
                 , border3 (px 1) solid (rgb 150 150 150)
-                , position sticky
                 ]
 
         columnHeaders =
-            tr []
-                (th [] []
-                    :: mapColumns
-                        (\col ->
-                            myTh [ css [ top (px 0) ] ] [ text <| toLetter col ]
-                        )
-                )
+            th [] []
+                :: mapColumns
+                    (\col ->
+                        myTh [ css [ top (px 0) ] ] [ text <| toLetter col ]
+                    )
 
         rowHeader row =
-            myTh [ css [ left (px 0) ] ] [ text <| S.fromInt row ]
+            myTh [ css [ left (px 0), position sticky ] ] [ text <| S.fromInt row ]
 
         cell row col =
             let
@@ -314,11 +336,14 @@ tableView model =
         [ css
             [ borderCollapse collapse
             , width (pct 100)
+            , height (pct 100)
             , display block
             , overflow scroll
             ]
         ]
-        (columnHeaders :: rows)
+        [ thead [ css [ position sticky, top (px 0) ] ] columnHeaders
+        , tbody [] rows
+        ]
 
 
 sheetSelector : Model -> Html Msg
@@ -370,11 +395,28 @@ sheetSelector model =
                 ( After { name }, _ ) ->
                     defaultItem name False
 
-        addSheet =
+        addGridSheet =
             li
                 [ itemCss
-                , onClick InsertSheet
+                , onClick InsertGridSheet
                 ]
-                [ text " + " ]
+                [ text "+grid" ]
+
+        addTableSheet =
+            li
+                [ itemCss
+                , onClick InsertTableSheet
+                ]
+                [ text "+table" ]
     in
-    ul [] (addSheet :: (Doc.sheets model.doc |> L.map sheetItem))
+    ul
+        [ css
+            [ borderTop3 (px 1) solid (rgb 0 0 0)
+            , margin (px 0)
+            , padding2 (px 10) (px 10)
+            ]
+        ]
+        (addTableSheet
+            :: addGridSheet
+            :: (Doc.sheets model.doc |> L.map sheetItem)
+        )

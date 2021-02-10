@@ -1,7 +1,10 @@
 module Document exposing
     ( Document
     , Sheet(..)
-    , cellSource
+    ,  cellSource
+       --, commitEdit
+
+    , currentSheet
     , fromList
     , get
     , gridSheetItem
@@ -12,6 +15,8 @@ module Document exposing
     , selectSheet
     , sheets
     , singleSheet
+    , tableSheetItem
+    , updateTable
     )
 
 import Char exposing (isUpper)
@@ -25,6 +30,7 @@ import Document.AST as AST
         , parseName
         )
 import Document.Cell as Cell exposing (Cell)
+import Document.Table as Table exposing (Table)
 import Document.Types exposing (..)
 import List as L
 import Maybe as M
@@ -39,44 +45,76 @@ type Document
 
 type alias DocData =
     { cells : Dict LocatedName Cell
-    , sheetsBefore : List SheetItem
-    , currentSheet : SheetItem
-    , sheetsAfter : List SheetItem
+    , sheetItemsBefore : List SheetItem
+    , currentSheetItem : SheetItem
+    , sheetItemsAfter : List SheetItem
     }
 
 
 type alias SheetItem =
-    { name : String
-    , sheet : Sheet
+    { sheet : Sheet
+    , name : String
     }
 
 
 type Sheet
     = GridSheet
-    | TableSheet
+    | TableSheet Table
 
 
-gridSheetItem name =
-    { name = name, sheet = GridSheet }
+gridSheetItem : Name -> SheetItem
+gridSheetItem =
+    SheetItem GridSheet
+
+
+tableSheetItem : Name -> SheetItem
+tableSheetItem =
+    SheetItem (TableSheet Table.empty)
+
+
+updateTable : Table.State -> Document -> Document
+updateTable s (Document data) =
+    let
+        upd item table =
+            { item
+                | sheet =
+                    TableSheet <|
+                        Table.update s table
+            }
+    in
+    Document <|
+        case data.currentSheetItem.sheet of
+            TableSheet table ->
+                { data
+                    | currentSheetItem = upd data.currentSheetItem table
+                }
+
+            _ ->
+                data
 
 
 singleSheet : Name -> Document
 singleSheet name =
     Document
         { cells = D.empty
-        , currentSheet = { name = name, sheet = GridSheet }
-        , sheetsBefore = []
-        , sheetsAfter = []
+        , currentSheetItem = { name = name, sheet = GridSheet }
+        , sheetItemsBefore = []
+        , sheetItemsAfter = []
         }
 
 
 sheets : Document -> List (Position SheetItem)
-sheets (Document { sheetsBefore, currentSheet, sheetsAfter }) =
+sheets (Document { sheetItemsBefore, currentSheetItem, sheetItemsAfter }) =
     L.concat
-        [ L.map Before sheetsBefore
-        , [ Current currentSheet ]
-        , L.map After sheetsAfter
+        [ L.map Before sheetItemsBefore
+        , [ Current currentSheetItem ]
+        , L.map After sheetItemsAfter
         ]
+
+
+currentSheet : Document -> Sheet
+currentSheet (Document { currentSheetItem }) =
+    currentSheetItem.sheet
 
 
 selectSheet : Name -> Document -> Result Error Document
@@ -96,17 +134,17 @@ selectSheet selectedName (Document data) =
 
         ( newBefore, newCurrent, newAfter ) =
             L.foldl process
-                (L.foldl process ( [], Nothing, [] ) data.sheetsBefore)
-                (data.currentSheet :: data.sheetsAfter)
+                (L.foldl process ( [], Nothing, [] ) data.sheetItemsBefore)
+                (data.currentSheetItem :: data.sheetItemsAfter)
     in
     case newCurrent of
         Just current ->
             Ok
                 (Document
                     { data
-                        | currentSheet = current
-                        , sheetsBefore = newBefore
-                        , sheetsAfter = newAfter
+                        | currentSheetItem = current
+                        , sheetItemsBefore = newBefore
+                        , sheetItemsAfter = newAfter
                     }
                 )
 
@@ -116,33 +154,33 @@ selectSheet selectedName (Document data) =
 
 sheetExists : Name -> DocData -> Bool
 sheetExists name data =
-    L.member name (L.map .name data.sheetsBefore)
-        || L.member name (L.map .name data.sheetsAfter)
-        || (name == data.currentSheet.name)
+    L.member name (L.map .name data.sheetItemsBefore)
+        || L.member name (L.map .name data.sheetItemsAfter)
+        || (name == data.currentSheetItem.name)
 
 
-insertSheet : Name -> Document -> Result Error Document
-insertSheet name (Document data) =
-    if sheetExists name data then
-        Err (DuplicateSheetNameError name)
+insertSheet : SheetItem -> Document -> Result Error Document
+insertSheet item (Document data) =
+    if sheetExists item.name data then
+        Err (DuplicateSheetNameError item.name)
 
     else
         Ok <|
             Document
                 { data
-                    | sheetsAfter = L.append data.sheetsAfter [ gridSheetItem name ]
+                    | sheetItemsAfter = L.append data.sheetItemsAfter [ item ]
                 }
 
 
 removeSheet : Name -> Document -> Result Error Document
 removeSheet name (Document d) =
-    if name == d.currentSheet.name then
-        case ( d.sheetsBefore, d.sheetsAfter ) of
+    if name == d.currentSheetItem.name then
+        case ( d.sheetItemsBefore, d.sheetItemsAfter ) of
             ( _, head :: tail ) ->
-                Ok <| Document { d | currentSheet = head, sheetsAfter = tail }
+                Ok <| Document { d | currentSheetItem = head, sheetItemsAfter = tail }
 
             ( head :: tail, _ ) ->
-                Ok <| Document { d | currentSheet = head, sheetsBefore = tail }
+                Ok <| Document { d | currentSheetItem = head, sheetItemsBefore = tail }
 
             _ ->
                 Err (RemovingLastSheetError name)
@@ -151,8 +189,8 @@ removeSheet name (Document d) =
         Ok <|
             Document
                 { d
-                    | sheetsBefore = L.filter (.name >> (/=) name) d.sheetsBefore
-                    , sheetsAfter = L.filter (.name >> (/=) name) d.sheetsAfter
+                    | sheetItemsBefore = L.filter (.name >> (/=) name) d.sheetItemsBefore
+                    , sheetItemsAfter = L.filter (.name >> (/=) name) d.sheetItemsAfter
                     , cells =
                         d.cells
                             |> D.filter (\( sheet, _ ) _ -> sheet /= name)
@@ -174,9 +212,9 @@ renameSheet name newName (Document data) =
                     D.insert ( f sheetName, cellName ) (Cell.renameSheets f cell) renamed
             in
             { d
-                | currentSheet = updateName f d.currentSheet
-                , sheetsBefore = L.map (updateName f) d.sheetsBefore
-                , sheetsAfter = L.map (updateName f) d.sheetsAfter
+                | currentSheetItem = updateName f d.currentSheetItem
+                , sheetItemsBefore = L.map (updateName f) d.sheetItemsBefore
+                , sheetItemsAfter = L.map (updateName f) d.sheetItemsAfter
                 , cells = D.foldr renameCells D.empty d.cells
             }
     in
@@ -213,13 +251,13 @@ insert : Name -> String -> Document -> Document
 insert cellName value (Document d) =
     case value of
         "" ->
-            Document { d | cells = D.remove ( d.currentSheet.name, cellName ) d.cells }
+            Document { d | cells = D.remove ( d.currentSheetItem.name, cellName ) d.cells }
 
         _ ->
             Document
                 { d
                     | cells =
-                        D.insert ( d.currentSheet.name, cellName )
+                        D.insert ( d.currentSheetItem.name, cellName )
                             (Cell.fromSource value)
                             d.cells
                 }
@@ -242,12 +280,12 @@ getCell sheetName cellName data =
 
 cellSource : Name -> Document -> Result Error String
 cellSource cellName (Document d) =
-    getCell d.currentSheet.name cellName d |> R.map Cell.source
+    getCell d.currentSheetItem.name cellName d |> R.map Cell.source
 
 
 get : Name -> Document -> ValueOrError
 get name (Document d) =
-    evalCell ( d.currentSheet.name, name ) D.empty d |> T.first
+    evalCell ( d.currentSheetItem.name, name ) D.empty d |> T.first
 
 
 type alias Memo =
