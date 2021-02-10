@@ -3,17 +3,13 @@ module Main exposing (..)
 import Browser
 import Css exposing (..)
 import Css.Global as Global
-import Dict as D exposing (Dict)
-import Document as Doc exposing (Sheet(..))
-import Document.Types exposing (Error(..), Name, Position(..), Value(..), ValueOrError)
+import Document as Doc
+import Document.Types exposing (Name, Position(..))
 import Html.Styled as H exposing (..)
 import Html.Styled.Attributes exposing (css, value)
 import Html.Styled.Events exposing (onClick, onDoubleClick, onInput)
 import List as L
-import Maybe as M
 import Result as R
-import Set exposing (Set)
-import String as S
 
 
 main =

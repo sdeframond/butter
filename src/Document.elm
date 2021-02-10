@@ -25,9 +25,7 @@ module Document exposing
     , view
     )
 
-import Char exposing (isUpper)
 import Css exposing (..)
-import Debug exposing (log)
 import Dict as D exposing (Dict)
 import Document.AST as AST
     exposing
@@ -43,9 +41,7 @@ import Document.Types as Types exposing (..)
 import Html.Styled as H exposing (..)
 import Html.Styled.Attributes exposing (css)
 import List as L
-import Maybe as M
 import Result as R
-import Set exposing (Set)
 import Tuple as T
 
 
