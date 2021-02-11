@@ -4,12 +4,9 @@ module Document exposing
     , Sheet(..)
     , cellSource
     , commitEdit
-    ,  fromList
-       -- Not used but useful for testing.
-       -- TODO: find a way to test without it.
-
     , get
     , gridSheet
+    , init
     ,  insert
        -- Not used but useful for testing.
        -- TODO: find a way to test without it.
@@ -19,7 +16,6 @@ module Document exposing
     , renameSheet
     , selectSheet
     , sheetNames
-    , singleSheet
     , tableSheet
     , update
     , view
@@ -129,11 +125,11 @@ commitEdit (Document ({ currentSheetItem } as data)) =
             Document data
 
 
-singleSheet : Name -> Document
-singleSheet name =
+init : Name -> Sheet -> Document
+init name sheet =
     Document
         { cells = D.empty
-        , currentSheetItem = SheetItem name gridSheet
+        , currentSheetItem = SheetItem name sheet
         , sheetItemsBefore = []
         , sheetItemsAfter = []
         }
@@ -301,11 +297,6 @@ insertHelp cellName value d =
                         (Cell.fromSource value)
                         d.cells
             }
-
-
-fromList : Name -> List ( String, String ) -> Document
-fromList sheet pairs =
-    List.foldl (\( a, b ) (Document data) -> Document <| insertHelp a b data) (singleSheet sheet) pairs
 
 
 getCell : Name -> Name -> DocData -> Result Error Cell

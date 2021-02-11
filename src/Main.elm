@@ -60,7 +60,7 @@ init flags =
 
 initModel : Model
 initModel =
-    { doc = Doc.singleSheet "Sheet1"
+    { doc = Doc.init "Sheet1" Doc.tableSheet
     , sheetCounter = 2
     , edit = NotEditing
     }
