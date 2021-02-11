@@ -76,7 +76,7 @@ tableSheet =
 
 type Msg
     = GridMsg Grid
-    | TableMsg Table.State
+    | TableMsg Table.Msg
 
 
 update : Msg -> Document -> Document
@@ -90,10 +90,10 @@ update msg (Document data) =
             ( GridMsg grid, GridSheet _ ) ->
                 { data | currentSheetItem = SheetItem name (GridSheet grid) }
 
-            ( TableMsg state, TableSheet table ) ->
+            ( TableMsg tableMsg, TableSheet table ) ->
                 { data
                     | currentSheetItem =
-                        SheetItem name (TableSheet <| Table.update state table)
+                        SheetItem name (TableSheet <| Table.update tableMsg table)
                 }
 
             ( _, _ ) ->
