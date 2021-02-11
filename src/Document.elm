@@ -427,7 +427,7 @@ view { toMsg, toCommitMsg } ((Document { currentSheetItem }) as doc) =
         [ css
             [ width (pct 100)
             , height (pct 100)
-            , overflow hidden
+            , overflow auto
             ]
         ]
         [ case currentSheetItem.sheet of
@@ -435,5 +435,5 @@ view { toMsg, toCommitMsg } ((Document { currentSheetItem }) as doc) =
                 Grid.view gridConfig grid
 
             TableSheet table ->
-                fromUnstyled (Table.view (TableMsg >> toMsg) table)
+                Table.view (TableMsg >> toMsg) table
         ]

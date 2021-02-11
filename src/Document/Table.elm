@@ -6,12 +6,20 @@ module Document.Table exposing
     , view
     )
 
+import Css exposing (..)
 import Dict as D exposing (Dict)
 import Document.Cell exposing (Cell)
 import Document.Types exposing (Value)
-import Html exposing (Html, input, td, text)
-import Html.Attributes exposing (value)
-import Html.Events exposing (keyCode, on, onInput)
+import Html.Styled as H
+    exposing
+        ( Html
+        , input
+        , td
+        , text
+        , th
+        )
+import Html.Styled.Attributes as Attr exposing (css, value)
+import Html.Styled.Events exposing (keyCode, on, onInput)
 import Json.Decode as Decode
 import List as L
 import Maybe as M
@@ -106,7 +114,7 @@ updateData msg data =
 
 view : (Msg -> msg) -> Table -> Html msg
 view toMsg (Table { fields, rows, state }) =
-    T.view (config toMsg fields) state rows
+    T.view (config toMsg fields) state rows |> H.fromUnstyled
 
 
 config : (Msg -> msg) -> List Field -> T.Config Row msg
@@ -117,27 +125,8 @@ config toMsg fields =
 
         customizations =
             { defaultCustomizations
-                | tfoot = Just tfoot
-            }
-
-        onKeyDown tagger =
-            on "keydown" (Decode.map tagger keyCode)
-
-        tfoot =
-            { attributes = []
-            , children =
-                fields
-                    |> L.map
-                        (\f ->
-                            td []
-                                [ input
-                                    [ value f.edit
-                                    , onInput (UpdateEdit f.name >> toMsg)
-                                    , onKeyDown (KeyDown >> toMsg)
-                                    ]
-                                    []
-                                ]
-                        )
+                | tfoot = Just (tfoot toMsg fields)
+                , thead = thead
             }
     in
     T.customConfig
@@ -146,3 +135,64 @@ config toMsg fields =
         , columns = fields |> L.map toColumn
         , customizations = customizations
         }
+
+
+tfoot toMsg fields =
+    let
+        onKeyDown tagger =
+            on "keydown" (Decode.map tagger keyCode)
+    in
+    T.HtmlDetails []
+        (fields
+            |> L.map
+                (\f ->
+                    td [ css [ position sticky, bottom (px 0) ] ]
+                        [ input
+                            [ value f.edit
+                            , onInput (UpdateEdit f.name >> toMsg)
+                            , onKeyDown (KeyDown >> toMsg)
+                            ]
+                            []
+                        ]
+                        |> H.toUnstyled
+                )
+        )
+
+
+thead headers =
+    T.HtmlDetails [] (List.map theadHelp headers)
+
+
+theadHelp ( name, status, onClick_ ) =
+    let
+        content =
+            case status of
+                T.Unsortable ->
+                    [ text name ]
+
+                T.Sortable selected ->
+                    [ text name
+                    , if selected then
+                        text "↓"
+
+                      else
+                        text "↓"
+                    ]
+
+                T.Reversible Nothing ->
+                    [ text name
+                    , text "↕"
+                    ]
+
+                T.Reversible (Just isReversed) ->
+                    [ text name
+                    , text
+                        (if isReversed then
+                            "↑"
+
+                         else
+                            "↓"
+                        )
+                    ]
+    in
+    th [ onClick_ |> Attr.fromUnstyled, css [ position sticky, top (px 0) ] ] content |> H.toUnstyled

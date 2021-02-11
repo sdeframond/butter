@@ -141,14 +141,7 @@ view { toMsg, getCellSource, getCellValue, commitMsg } (Grid editState) =
                     )
     in
     H.table
-        [ css
-            [ borderCollapse collapse
-            , width (pct 100)
-            , height (pct 100)
-            , display block
-            , overflow scroll
-            ]
-        ]
+        [ css [ borderCollapse collapse ] ]
         [ thead [ css [ position sticky, top (px 0) ] ] columnHeaders
         , tbody [] rows
         ]
