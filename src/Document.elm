@@ -151,11 +151,6 @@ sheetNames (Document { sheetItemsBefore, currentSheetItem, sheetItemsAfter }) =
         ]
 
 
-currentSheet : Document -> Sheet
-currentSheet (Document { currentSheetItem }) =
-    currentSheetItem.sheet
-
-
 selectSheet : Name -> Document -> Result Error Document
 selectSheet selectedName (Document data) =
     let
