@@ -1,4 +1,4 @@
-module Document.Grid exposing (Config, Grid, commit, init, view)
+module Document.Grid exposing (Cmd(..), Config, Grid, Msg, commit, init, update, view)
 
 import Css exposing (..)
 import Document.Types exposing (Error(..), Name, Value(..), ValueOrError)
@@ -18,8 +18,7 @@ type alias EditState =
 
 
 type alias Config msg =
-    { toMsg : Grid -> msg
-    , commitMsg : Grid -> msg
+    { toMsg : Msg -> msg
     , getCellValue : Name -> ValueOrError
     , getCellSource : Name -> String
     }
@@ -30,17 +29,48 @@ init =
     Grid Nothing
 
 
-commit : (EditState -> a) -> Grid -> ( a, Grid )
-commit commiter (Grid editState) =
-    ( commiter editState, init )
+type Cmd
+    = NoCmd
+    | CommitChangesCmd String String
+
+
+type Msg
+    = StartEditing String String
+    | UpdateEdit String String
+
+
+update : Msg -> Grid -> ( Grid, Cmd )
+update msg (Grid editState) =
+    case msg of
+        UpdateEdit name content ->
+            ( Grid (Just ( name, content )), NoCmd )
+
+        StartEditing name content ->
+            ( Grid (Just ( name, content ))
+            , case editState of
+                Nothing ->
+                    NoCmd
+
+                Just ( oldName, oldContent ) ->
+                    CommitChangesCmd oldName oldContent
+            )
+
+
+commit : Grid -> ( Grid, Cmd )
+commit (Grid editState) =
+    ( init
+    , case editState of
+        Nothing ->
+            NoCmd
+
+        Just ( name, content ) ->
+            CommitChangesCmd name content
+    )
 
 
 view : Config msg -> Grid -> Html msg
-view { toMsg, getCellSource, getCellValue, commitMsg } (Grid editState) =
+view { toMsg, getCellSource, getCellValue } (Grid editState) =
     let
-        editGrid name str =
-            Grid (Just ( name, str ))
-
         numberOfRow =
             40
 
@@ -100,7 +130,7 @@ view { toMsg, getCellSource, getCellValue, commitMsg } (Grid editState) =
                 defaultCellView =
                     td
                         [ cellCss
-                        , onClick <| commitMsg <| editGrid cellName (getCellSource cellName)
+                        , onClick <| toMsg <| StartEditing cellName (getCellSource cellName)
                         ]
                         [ getCellValue cellName
                             |> valueToString
@@ -120,7 +150,7 @@ view { toMsg, getCellSource, getCellValue, commitMsg } (Grid editState) =
                         td [ cellCss ]
                             [ input
                                 [ value str
-                                , onInput <| (toMsg << editGrid cellName)
+                                , onInput <| (toMsg << UpdateEdit cellName)
                                 ]
                                 []
                             ]

@@ -75,54 +75,61 @@ tableSheet =
 
 
 type Msg
-    = GridMsg Grid
+    = GridMsg Grid.Msg
     | TableMsg Table.Msg
 
 
 update : Msg -> Document -> Document
 update msg (Document data) =
+    Document (updateData msg data)
+
+
+updateData : Msg -> DocData -> DocData
+updateData msg data =
     let
         { sheet, name } =
             data.currentSheetItem
     in
-    Document <|
-        case ( msg, sheet ) of
-            ( GridMsg grid, GridSheet _ ) ->
-                { data | currentSheetItem = SheetItem name (GridSheet grid) }
+    case ( msg, sheet ) of
+        ( GridMsg gridMsg, GridSheet grid ) ->
+            updateGrid (Grid.update gridMsg grid) data
 
-            ( TableMsg tableMsg, TableSheet table ) ->
-                { data
-                    | currentSheetItem =
-                        SheetItem name (TableSheet <| Table.update tableMsg table)
-                }
+        ( TableMsg tableMsg, TableSheet table ) ->
+            { data
+                | currentSheetItem =
+                    SheetItem name (TableSheet <| Table.update tableMsg table)
+            }
 
-            ( _, _ ) ->
-                data
+        ( _, _ ) ->
+            data
 
 
 commitEdit : Document -> Document
 commitEdit (Document ({ currentSheetItem } as data)) =
-    case currentSheetItem.sheet of
-        GridSheet grid ->
-            let
-                commiter editState =
-                    case editState of
-                        Nothing ->
-                            data
+    Document <|
+        case currentSheetItem.sheet of
+            GridSheet grid ->
+                updateGrid (Grid.commit grid) data
 
-                        Just ( name, src ) ->
-                            insertHelp name src data
+            _ ->
+                data
 
-                newItem =
-                    { currentSheetItem | sheet = GridSheet newGrid }
 
-                ( newData, newGrid ) =
-                    Grid.commit commiter grid
-            in
-            Document { newData | currentSheetItem = newItem }
+updateGrid : ( Grid, Grid.Cmd ) -> DocData -> DocData
+updateGrid ( newGrid, gridCmd ) data =
+    let
+        newItem =
+            SheetItem data.currentSheetItem.name (GridSheet newGrid)
 
-        _ ->
-            Document data
+        newData =
+            { data | currentSheetItem = newItem }
+    in
+    case gridCmd of
+        Grid.NoCmd ->
+            newData
+
+        Grid.CommitChangesCmd cellName content ->
+            insertHelp cellName content newData
 
 
 init : Name -> Sheet -> Document
@@ -408,17 +415,14 @@ evalHelp ancestors name memo_ data =
 
 
 type alias Config msg =
-    { toMsg : Msg -> msg
-    , toCommitMsg : Msg -> msg
-    }
+    { toMsg : Msg -> msg }
 
 
 view : Config msg -> Document -> Html msg
-view { toMsg, toCommitMsg } ((Document { currentSheetItem }) as doc) =
+view { toMsg } ((Document { currentSheetItem }) as doc) =
     let
         gridConfig =
             { toMsg = GridMsg >> toMsg
-            , commitMsg = GridMsg >> toCommitMsg
             , getCellValue = \name -> get name doc
             , getCellSource = \name -> cellSource name doc |> R.withDefault ""
             }

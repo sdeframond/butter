@@ -80,7 +80,6 @@ type Msg
     | EditSheet Name
     | UpdateSheetName Name
     | DocMsg Doc.Msg
-    | DocCommitMsg Doc.Msg
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -91,19 +90,21 @@ update msg model =
 updateModel : Msg -> Model -> Model
 updateModel msg model =
     let
-        commited =
-            case model.edit of
+        commitDoc m =
+            { m | doc = Doc.commitEdit m.doc }
+
+        commitSheetName m =
+            case m.edit of
                 EditingSheetName oldName newName ->
-                    { model
+                    { m
                         | edit = NotEditing
                         , doc =
-                            Doc.renameSheet oldName newName model.doc
-                                |> R.withDefault model.doc
-                                |> Doc.commitEdit
+                            Doc.renameSheet oldName newName m.doc
+                                |> R.withDefault m.doc
                     }
 
                 NotEditing ->
-                    { model | doc = Doc.commitEdit model.doc }
+                    m
 
         insertSheet sheet =
             { model
@@ -124,25 +125,23 @@ updateModel msg model =
             insertSheet Doc.tableSheet
 
         SelectSheet name ->
-            { commited
-                | doc =
-                    Doc.selectSheet name commited.doc
-                        |> R.withDefault commited.doc
-            }
+            commitDoc
+                { model
+                    | doc =
+                        Doc.selectSheet name model.doc
+                            |> R.withDefault model.doc
+                }
 
         RemoveSheet name ->
-            let
-                doc =
-                    Doc.removeSheet name commited.doc
-            in
-            { commited
-                | doc =
-                    Doc.removeSheet name commited.doc
-                        |> R.withDefault commited.doc
-            }
+            commitDoc
+                { model
+                    | doc =
+                        Doc.removeSheet name model.doc
+                            |> R.withDefault model.doc
+                }
 
         EditSheet name ->
-            { commited | edit = EditingSheetName name name }
+            commitDoc { model | edit = EditingSheetName name name }
 
         UpdateSheetName name ->
             { model
@@ -156,10 +155,7 @@ updateModel msg model =
             }
 
         DocMsg docMsg ->
-            { model | doc = Doc.update docMsg model.doc }
-
-        DocCommitMsg docMsg ->
-            { commited | doc = Doc.update docMsg commited.doc }
+            commitSheetName { model | doc = Doc.update docMsg model.doc }
 
 
 
@@ -184,7 +180,6 @@ view model =
     let
         docConfig =
             { toMsg = DocMsg
-            , toCommitMsg = DocCommitMsg
             }
     in
     { title = "Butter Spreadsheet"
