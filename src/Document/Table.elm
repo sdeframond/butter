@@ -19,7 +19,7 @@ import Html.Styled as H
         , th
         )
 import Html.Styled.Attributes as Attr exposing (css, value)
-import Html.Styled.Events exposing (keyCode, on, onInput)
+import Html.Styled.Events exposing (keyCode, on, onClick, onInput)
 import Json.Decode as Decode
 import List as L
 import Maybe as M
@@ -35,6 +35,7 @@ type alias TableData =
     , rows : List Row
     , state : T.State
     , nextId : Int
+    , editedCell : Maybe ( ( Int, String ), String )
     }
 
 
@@ -50,6 +51,8 @@ type Msg
     = SetTableState T.State
     | UpdateEdit String String
     | KeyDown Int
+    | EditCell Int String String
+    | UpdateEditedCell String
 
 
 empty : Table
@@ -59,9 +62,10 @@ empty =
             [ { name = "Field1", edit = "" }
             , { name = "Field2", edit = "" }
             ]
-        , rows = [ { id = 1, cells = D.empty } ]
+        , rows = []
         , state = T.initialSort "Field1"
-        , nextId = 2
+        , nextId = 1
+        , editedCell = Nothing
         }
 
 
@@ -72,6 +76,27 @@ update msg (Table data) =
 
 updateData : Msg -> TableData -> TableData
 updateData msg data =
+    let
+        commit d =
+            case d.editedCell of
+                Nothing ->
+                    d
+
+                Just ( ( rowId, fieldName ), content ) ->
+                    { d
+                        | editedCell = Nothing
+                        , rows =
+                            L.map
+                                (\row ->
+                                    if row.id == rowId then
+                                        { row | cells = D.insert fieldName content row.cells }
+
+                                    else
+                                        row
+                                )
+                                d.rows
+                    }
+    in
     case msg of
         SetTableState state ->
             { data | state = state }
@@ -111,17 +136,36 @@ updateData msg data =
             else
                 data
 
+        EditCell rowId fieldName content ->
+            let
+                commited =
+                    commit data
+            in
+            { commited | editedCell = Just ( ( rowId, fieldName ), content ) }
+
+        UpdateEditedCell content ->
+            case data.editedCell of
+                Nothing ->
+                    data
+
+                Just ( cellRef, _ ) ->
+                    { data | editedCell = Just ( cellRef, content ) }
+
 
 view : (Msg -> msg) -> Table -> Html msg
-view toMsg (Table { fields, rows, state }) =
-    T.view (config toMsg fields) state rows |> H.fromUnstyled
+view toMsg (Table ({ rows, state } as data)) =
+    T.view (config toMsg data) state rows |> H.fromUnstyled
 
 
-config : (Msg -> msg) -> List Field -> T.Config Row msg
-config toMsg fields =
+config : (Msg -> msg) -> TableData -> T.Config Row msg
+config toMsg { fields, editedCell } =
     let
         toColumn { name } =
-            T.stringColumn name (.cells >> D.get name >> M.withDefault "")
+            T.veryCustomColumn
+                { name = name
+                , sorter = T.decreasingOrIncreasingBy (.cells >> D.get name >> M.withDefault "")
+                , viewData = cellView name editedCell toMsg
+                }
 
         customizations =
             { defaultCustomizations
@@ -135,6 +179,43 @@ config toMsg fields =
         , columns = fields |> L.map toColumn
         , customizations = customizations
         }
+
+
+cellView : String -> Maybe ( ( Int, String ), String ) -> (Msg -> msg) -> Row -> T.HtmlDetails msg
+cellView name editedCell toMsg { id, cells } =
+    let
+        defaultCellView =
+            D.get name cells
+                |> M.withDefault ""
+                |> text
+                |> L.singleton
+                |> H.span
+                    [ onClick
+                        (D.get name cells
+                            |> M.withDefault ""
+                            |> EditCell id name
+                            |> toMsg
+                        )
+                    ]
+                |> H.toUnstyled
+    in
+    T.HtmlDetails []
+        [ case editedCell of
+            Just ( cellRef, content ) ->
+                if cellRef == ( id, name ) then
+                    H.toUnstyled <|
+                        H.input
+                            [ onInput (UpdateEditedCell >> toMsg)
+                            , value content
+                            ]
+                            []
+
+                else
+                    defaultCellView
+
+            Nothing ->
+                defaultCellView
+        ]
 
 
 tfoot toMsg fields =
