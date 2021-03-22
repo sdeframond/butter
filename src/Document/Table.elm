@@ -14,6 +14,7 @@ import Html.Styled as H
     exposing
         ( Html
         , input
+        , span
         , td
         , text
         , th
@@ -36,6 +37,7 @@ type alias TableData =
     , state : T.State
     , nextId : Int
     , editedCell : Maybe ( ( Int, String ), String )
+    , newColumnName : String
     }
 
 
@@ -53,19 +55,20 @@ type Msg
     | KeyDown Int
     | EditCell Int String String
     | UpdateEditedCell String
+    | AddColumnClicked
+    | OnNewColumnNameInput String
+    | RemoveColumnButtonClicked String
 
 
 empty : Table
 empty =
     Table
-        { fields =
-            [ { name = "Field1", edit = "" }
-            , { name = "Field2", edit = "" }
-            ]
+        { fields = []
         , rows = []
         , state = T.initialSort "Field1"
         , nextId = 1
         , editedCell = Nothing
+        , newColumnName = ""
         }
 
 
@@ -151,6 +154,25 @@ updateData msg data =
                 Just ( cellRef, _ ) ->
                     { data | editedCell = Just ( cellRef, content ) }
 
+        AddColumnClicked ->
+            if data.newColumnName /= "" then
+                { data
+                    | newColumnName = ""
+                    , fields = data.fields ++ [ { name = data.newColumnName, edit = "" } ]
+                }
+
+            else
+                data
+
+        OnNewColumnNameInput name ->
+            { data | newColumnName = name }
+
+        RemoveColumnButtonClicked name ->
+            { data
+                | fields = L.filter (.name >> (/=) name) data.fields
+                , rows = L.map (\r -> { r | cells = D.remove name r.cells }) data.rows
+            }
+
 
 view : (Msg -> msg) -> Table -> Html msg
 view toMsg (Table ({ rows, state } as data)) =
@@ -158,7 +180,7 @@ view toMsg (Table ({ rows, state } as data)) =
 
 
 config : (Msg -> msg) -> TableData -> T.Config Row msg
-config toMsg { fields, editedCell } =
+config toMsg { fields, editedCell, newColumnName } =
     let
         toColumn { name } =
             T.veryCustomColumn
@@ -170,7 +192,7 @@ config toMsg { fields, editedCell } =
         customizations =
             { defaultCustomizations
                 | tfoot = Just (tfoot toMsg fields)
-                , thead = thead
+                , thead = thead newColumnName fields toMsg
             }
     in
     T.customConfig
@@ -189,7 +211,7 @@ cellView name editedCell toMsg { id, cells } =
                 |> M.withDefault ""
                 |> text
                 |> L.singleton
-                |> H.span
+                |> span
                     [ onClick
                         (D.get name cells
                             |> M.withDefault ""
@@ -240,40 +262,71 @@ tfoot toMsg fields =
         )
 
 
-thead headers =
-    T.HtmlDetails [] (List.map theadHelp headers)
-
-
-theadHelp ( name, status, onClick_ ) =
+thead newColumnName fields toMsg headers =
     let
-        content =
+        onKeyDown tagger =
+            on "keydown" (Decode.map tagger keyCode)
+    in
+    T.HtmlDetails [] <|
+        L.map H.toUnstyled
+            [ H.tr []
+                (List.map (theadHelp toMsg) headers
+                    ++ [ input [ onInput (OnNewColumnNameInput >> toMsg), value newColumnName ] []
+                       , span [ onClick (toMsg AddColumnClicked) ] [ text "add" ]
+                       ]
+                )
+            , H.tr []
+                (fields
+                    |> L.map
+                        (\f ->
+                            td [ css [ position sticky, bottom (px 0) ] ]
+                                [ input
+                                    [ value f.edit
+                                    , onInput (UpdateEdit f.name >> toMsg)
+                                    , onKeyDown (KeyDown >> toMsg)
+                                    ]
+                                    []
+                                ]
+                        )
+                )
+            ]
+
+
+theadHelp toMsg ( name, status, onClick_ ) =
+    let
+        sortOnClick =
+            span [ onClick_ |> Attr.fromUnstyled ]
+
+        sortArrow base =
             case status of
                 T.Unsortable ->
-                    [ text name ]
+                    base
 
                 T.Sortable selected ->
-                    [ text name
-                    , if selected then
-                        text "↓"
+                    (if selected then
+                        sortOnClick [ text "↓" ]
 
-                      else
-                        text "↓"
-                    ]
+                     else
+                        sortOnClick [ text "↓" ]
+                    )
+                        :: base
 
                 T.Reversible Nothing ->
-                    [ text name
-                    , text "↕"
-                    ]
+                    sortOnClick [ text "↕" ] :: base
 
                 T.Reversible (Just isReversed) ->
-                    [ text name
-                    , text
-                        (if isReversed then
-                            "↑"
+                    sortOnClick
+                        [ text
+                            (if isReversed then
+                                "↑"
 
-                         else
-                            "↓"
-                        )
-                    ]
+                             else
+                                "↓"
+                            )
+                        ]
+                        :: base
+
+        deleteButton =
+            span [ onClick (RemoveColumnButtonClicked name |> toMsg) ] [ text "X" ]
     in
-    th [ onClick_ |> Attr.fromUnstyled, css [ position sticky, top (px 0) ] ] content |> H.toUnstyled
+    th [ css [ position sticky, top (px 0) ] ] (text name :: sortArrow [ deleteButton ])
