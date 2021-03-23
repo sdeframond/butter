@@ -37,6 +37,7 @@ import Document.Types as Types exposing (..)
 import Html.Styled as H exposing (..)
 import Html.Styled.Attributes exposing (css)
 import List as L
+import Maybe as M
 import Result as R
 import Tuple as T
 
@@ -318,95 +319,43 @@ cellSource cellName (Document d) =
 
 get : Name -> Document -> ValueOrError
 get name (Document d) =
-    evalCell ( d.currentSheetItem.name, name ) D.empty d |> T.first
+    evalCell D.empty d [] ( d.currentSheetItem.name, name ) |> T.first
 
 
-type alias Memo =
-    Dict LocatedName ValueOrError
-
-
-evalCell : LocatedName -> Memo -> DocData -> ( ValueOrError, Memo )
-evalCell name memo data =
-    evalHelp [] name memo data
-
-
-evalHelp : List LocatedName -> LocatedName -> Memo -> DocData -> ( ValueOrError, Memo )
-evalHelp ancestors name memo_ data =
+evalCell : AST.Memo -> DocData -> List LocatedName -> LocatedName -> ( ValueOrError, AST.Memo )
+evalCell memo data ancestors name =
     let
-        intBinaryOperator f memo errMsg x y =
-            let
-                ( xRes, xMemo ) =
-                    evalFormulaAst memo x
-
-                ( yRes, yMemo ) =
-                    evalFormulaAst xMemo y
-
-                applyOp xVal yVal =
-                    case ( xVal, yVal ) of
-                        ( IntValue i, IntValue j ) ->
-                            Ok <| IntValue (f i j)
-
-                        _ ->
-                            Err <| TypeError errMsg
-
-                res =
-                    R.andThen (\xx -> R.andThen (\yy -> applyOp xx yy) yRes) xRes
-            in
-            ( res, yMemo )
-
-        evalAst : Memo -> AST -> ( ValueOrError, Memo )
-        evalAst memo ast =
-            case ast of
-                Formula x ->
-                    evalFormulaAst memo x
-
-                RootLiteral v ->
-                    ( Ok v, memo )
-
-        evalFormulaAst : Memo -> FormulaAST -> ( ValueOrError, Memo )
-        evalFormulaAst memo ast =
-            case ast of
-                Literal v ->
-                    ( Ok v, memo )
-
-                BinOp op x y ->
-                    case op of
-                        PlusOp ->
-                            intBinaryOperator (+) memo "(+) works only on IntValue" x y
-
-                        MinusOp ->
-                            intBinaryOperator (-) memo "(-) works only on IntValue" x y
-
-                RelativeReference cellName ->
-                    evalHelp (name :: ancestors) ( T.first name, cellName ) memo data
-
-                AbsoluteReference sheetName cellName ->
-                    evalHelp (name :: ancestors) ( sheetName, cellName ) memo data
-
         memoize ( v, m ) =
             ( v, D.insert name v m )
+
+        resolveAbsolute =
+            evalCell memo data (name :: ancestors)
+
+        context =
+            { resolveAbsolute = resolveAbsolute
+            , resolveRelative = T.pair (T.first name) >> resolveAbsolute
+            }
     in
     if List.member name ancestors then
-        ( Err <| CyclicReferenceError ancestors, memo_ )
+        ( Err <| CyclicReferenceError ancestors, memo )
 
     else
-        case D.get name memo_ of
-            Just v ->
-                ( v, memo_ )
-
-            Nothing ->
-                getCell (T.first name) (T.second name) data
+        D.get name memo
+            |> M.map (\v -> ( v, memo ))
+            |> M.withDefault
+                (getCell (T.first name) (T.second name) data
                     |> R.andThen Cell.parsed
-                    |> R.map (evalAst memo_)
-                    |> (\ast_ ->
-                            case ast_ of
+                    |> R.map (AST.eval context memo)
+                    |> (\result ->
+                            case result of
                                 Err e ->
-                                    ( Err e, memo_ )
+                                    ( Err e, memo )
 
                                 Ok v ->
                                     v
                        )
                     |> memoize
+                )
 
 
 type alias Config msg =

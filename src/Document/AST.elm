@@ -3,13 +3,16 @@ module Document.AST exposing
     , BinaryOp(..)
     , Error(..)
     , FormulaAST(..)
+    , Memo
+    , eval
     , parseCell
     , parseName
     , renameSheets
     , toString
     )
 
-import Document.Types exposing (Value(..))
+import Dict exposing (Dict)
+import Document.Types exposing (Error(..), LocatedName, Name, Value(..), ValueOrError)
 import Parser as P exposing ((|.), (|=), Parser, backtrackable, end, int, lazy, map, oneOf, spaces, succeed, symbol, variable)
 import Result as R
 import Set
@@ -223,3 +226,65 @@ finalize reversedOps finalExpr =
 
         ( op, expr ) :: previousOps ->
             BinOp op (finalize previousOps expr) finalExpr
+
+
+type alias Context =
+    { resolveAbsolute : LocatedName -> ( ValueOrError, Memo )
+    , resolveRelative : Name -> ( ValueOrError, Memo )
+    }
+
+
+type alias Memo =
+    Dict LocatedName ValueOrError
+
+
+eval : Context -> Memo -> AST -> ( ValueOrError, Memo )
+eval context memo ast =
+    case ast of
+        RootLiteral v ->
+            ( Ok v, memo )
+
+        Formula formulaAst ->
+            evalFormula context memo formulaAst
+
+
+evalFormula context memo formulaAst =
+    let
+        intBinaryOperator f errMsg x y =
+            let
+                ( xRes, xMemo ) =
+                    evalFormula context memo x
+
+                ( yRes, yMemo ) =
+                    evalFormula context xMemo y
+
+                applyOp xVal yVal =
+                    case ( xVal, yVal ) of
+                        ( IntValue i, IntValue j ) ->
+                            Ok <| IntValue (f i j)
+
+                        _ ->
+                            Err <| TypeError errMsg
+
+                res =
+                    R.andThen (\xx -> R.andThen (\yy -> applyOp xx yy) yRes) xRes
+            in
+            ( res, yMemo )
+    in
+    case formulaAst of
+        Literal v ->
+            ( Ok v, memo )
+
+        BinOp op x y ->
+            case op of
+                PlusOp ->
+                    intBinaryOperator (+) "(+) works only on IntValue" x y
+
+                MinusOp ->
+                    intBinaryOperator (-) "(-) works only on IntValue" x y
+
+        RelativeReference cellName ->
+            context.resolveRelative cellName
+
+        AbsoluteReference sheetName cellName ->
+            context.resolveAbsolute ( sheetName, cellName )
