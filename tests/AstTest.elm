@@ -2,10 +2,8 @@ module AstTest exposing (..)
 
 import Document.AST exposing (..)
 import Document.Types exposing (Value(..))
-import Expect exposing (Expectation)
-import Fuzz exposing (Fuzzer, char, int, list, string, tuple)
+import Expect
 import List as L
-import String as S
 import Test exposing (..)
 
 

@@ -13,7 +13,7 @@ module Document.AST exposing
 
 import Dict exposing (Dict)
 import Document.Types exposing (Error(..), LocatedName, Name, Value(..), ValueOrError)
-import Parser as P exposing ((|.), (|=), Parser, backtrackable, end, int, lazy, map, oneOf, spaces, succeed, symbol, variable)
+import Parser as P exposing ((|.), (|=), Parser, end, int, lazy, map, oneOf, spaces, succeed, symbol, variable)
 import Result as R
 import Set
 import String as S
@@ -126,7 +126,7 @@ root =
             oneOf
                 [ variable
                     { start = \c -> c /= '='
-                    , inner = \c -> True
+                    , inner = always True
                     , reserved = Set.empty
                     }
                 , succeed ""
@@ -186,7 +186,7 @@ term =
             , map (Literal << IntValue) myInt
             , succeed (Literal << StringValue)
                 |. symbol "\""
-                |= variable { start = \c -> True, inner = \c -> c /= '"', reserved = Set.empty }
+                |= variable { start = always True, inner = \c -> c /= '"', reserved = Set.empty }
                 |. symbol "\""
             ]
         |. spaces
@@ -248,6 +248,7 @@ eval context memo ast =
             evalFormula context memo formulaAst
 
 
+evalFormula : Context -> Memo -> FormulaAST -> (ValueOrError, Memo)
 evalFormula context memo formulaAst =
     let
         intBinaryOperator f errMsg x y =

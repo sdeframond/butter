@@ -1,14 +1,11 @@
 module DocumentTest exposing (..)
 
-import Dict as D
 import Document exposing (..)
 import Document.Types exposing (..)
-import Expect exposing (Expectation)
-import Fuzz exposing (Fuzzer, int, list, string, tuple)
+import Expect
+import Fuzz exposing (int)
 import List as L
-import Maybe as M
 import Result as R
-import String as S
 import Test exposing (..)
 
 
@@ -289,7 +286,7 @@ suite =
                         ]
 
                     doc =
-                        data |> L.map (\( name, src, res ) -> ( name, src )) |> fromList "sheet"
+                        data |> L.map (\( name, src, _ ) -> ( name, src )) |> fromList "sheet"
                 in
                 L.map
                     (\( name, src, res ) ->

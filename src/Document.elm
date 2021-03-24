@@ -34,7 +34,7 @@ import Document.Cell as Cell exposing (Cell)
 import Document.Grid as Grid exposing (Grid)
 import Document.Table as Table exposing (Table)
 import Document.Types as Types exposing (..)
-import Html.Styled as H exposing (..)
+import Html.Styled exposing (..)
 import Html.Styled.Attributes exposing (css)
 import List as L
 import Maybe as M

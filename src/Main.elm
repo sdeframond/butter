@@ -5,13 +5,14 @@ import Css exposing (..)
 import Css.Global as Global
 import Document as Doc
 import Document.Types exposing (Name, Position(..))
-import Html.Styled as H exposing (..)
+import Html.Styled exposing (..)
 import Html.Styled.Attributes exposing (css, value)
 import Html.Styled.Events exposing (onClick, onDoubleClick, onInput)
 import List as L
 import Result as R
 
 
+main : Program {} Model Msg
 main =
     Browser.document
         { init = init
@@ -39,14 +40,6 @@ type EditStatus
     | EditingSheetName Name Name
 
 
-type alias Col =
-    Int
-
-
-type alias Row =
-    Int
-
-
 
 -------------------------------------------------------------------------------
 -- INIT
@@ -54,7 +47,7 @@ type alias Row =
 
 
 init : {} -> ( Model, Cmd Msg )
-init flags =
+init _ =
     ( initModel, Cmd.none )
 
 
@@ -165,7 +158,7 @@ updateModel msg model =
 
 
 subscriptions : Model -> Sub Msg
-subscriptions model =
+subscriptions _ =
     Sub.none
 
 
@@ -230,7 +223,7 @@ sheetSelector model =
                         ]
             in
             case ( positionedName, model.edit ) of
-                ( Current name, EditingSheetName oldName newName ) ->
+                ( Current _, EditingSheetName _ newName ) ->
                     li [ itemCss ]
                         [ input
                             [ value newName

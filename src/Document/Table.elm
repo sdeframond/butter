@@ -8,8 +8,6 @@ module Document.Table exposing
 
 import Css exposing (..)
 import Dict as D exposing (Dict)
-import Document.Cell exposing (Cell)
-import Document.Types exposing (Value)
 import Html.Styled as H
     exposing
         ( Html
