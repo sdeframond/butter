@@ -248,10 +248,10 @@ eval context memo ast =
             evalFormula context memo formulaAst
 
 
-evalFormula : Context -> Memo -> FormulaAST -> (ValueOrError, Memo)
+evalFormula : Context -> Memo -> FormulaAST -> ( ValueOrError, Memo )
 evalFormula context memo formulaAst =
     let
-        intBinaryOperator f errMsg x y =
+        intBinaryOperator op errMsg x y =
             let
                 ( xRes, xMemo ) =
                     evalFormula context memo x
@@ -262,15 +262,16 @@ evalFormula context memo formulaAst =
                 applyOp xVal yVal =
                     case ( xVal, yVal ) of
                         ( IntValue i, IntValue j ) ->
-                            Ok <| IntValue (f i j)
+                            Ok <| IntValue (op i j)
 
                         _ ->
                             Err <| TypeError errMsg
 
-                res =
-                    R.andThen (\xx -> R.andThen (\yy -> applyOp xx yy) yRes) xRes
+                andThen2 f a b =
+                    R.map2 f a b |> R.andThen identity
             in
-            ( res, yMemo )
+            ( andThen2 applyOp xRes yRes, yMemo )
+
     in
     case formulaAst of
         Literal v ->
