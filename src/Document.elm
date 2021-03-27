@@ -318,22 +318,24 @@ cellSource cellName (Document d) =
 
 
 get : Name -> Document -> ValueOrError
-get name (Document d) =
-    evalCell D.empty d [] ( d.currentSheetItem.name, name ) |> T.first
+get name (Document data) =
+    evalCell data [] D.empty ( data.currentSheetItem.name, name ) |> T.first
 
 
-evalCell : AST.Memo -> DocData -> List LocatedName -> LocatedName -> ( ValueOrError, AST.Memo )
-evalCell memo data ancestors name =
+evalCell : DocData -> List LocatedName -> AST.Memo -> LocatedName -> ( ValueOrError, AST.Memo )
+evalCell data ancestors memo name =
     let
         memoize ( v, m ) =
             ( v, D.insert name v m )
 
         resolveAbsolute =
-            evalCell memo data (name :: ancestors)
+            evalCell data (name :: ancestors)
 
         context =
             { resolveAbsolute = resolveAbsolute
-            , resolveRelative = T.pair (T.first name) >> resolveAbsolute
+            , resolveRelative =
+                \newMemo relativeName ->
+                    resolveAbsolute newMemo ( T.first name, relativeName )
             }
     in
     if List.member name ancestors then

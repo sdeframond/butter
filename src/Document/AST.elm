@@ -229,8 +229,8 @@ finalize reversedOps finalExpr =
 
 
 type alias Context =
-    { resolveAbsolute : LocatedName -> ( ValueOrError, Memo )
-    , resolveRelative : Name -> ( ValueOrError, Memo )
+    { resolveAbsolute : Memo -> LocatedName -> ( ValueOrError, Memo )
+    , resolveRelative : Memo -> Name -> ( ValueOrError, Memo )
     }
 
 
@@ -286,7 +286,7 @@ evalFormula context memo formulaAst =
                     intBinaryOperator (-) "(-) works only on IntValue" x y
 
         RelativeReference cellName ->
-            context.resolveRelative cellName
+            context.resolveRelative memo cellName
 
         AbsoluteReference sheetName cellName ->
-            context.resolveAbsolute ( sheetName, cellName )
+            context.resolveAbsolute memo ( sheetName, cellName )
