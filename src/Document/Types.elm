@@ -4,7 +4,7 @@ module Document.Types exposing
     , Name
     , Position(..)
     , Value(..)
-    , ValueOrError
+    , ValueOrError, valueOrErrorToString
     )
 
 
@@ -35,6 +35,24 @@ type Value
 type alias ValueOrError =
     Result Error Value
 
+valueOrErrorToString : ValueOrError -> String
+valueOrErrorToString val =
+    case val of
+        Err e ->
+            case e of
+                UndefinedNameError _ ->
+                    ""
+
+                r ->
+                    Debug.toString r
+
+        Ok v ->
+            case v of
+                IntValue i ->
+                    String.fromInt i
+
+                StringValue s ->
+                    s
 
 type Position a
     = Before a

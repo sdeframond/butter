@@ -77,24 +77,6 @@ view { toMsg, getCellSource, getCellValue } (Grid editState) =
         numberOfColumns =
             20
 
-        valueToString val =
-            case val of
-                Err e ->
-                    case e of
-                        UndefinedNameError _ ->
-                            ""
-
-                        r ->
-                            Debug.toString r
-
-                Ok v ->
-                    case v of
-                        IntValue i ->
-                            String.fromInt i
-
-                        StringValue s ->
-                            s
-
         toLetter i =
             Char.fromCode (i - 1 + Char.toCode 'A') |> S.fromChar
 
@@ -133,7 +115,7 @@ view { toMsg, getCellSource, getCellValue } (Grid editState) =
                         , onClick <| toMsg <| StartEditing cellName (getCellSource cellName)
                         ]
                         [ getCellValue cellName
-                            |> valueToString
+                            |> Document.Types.valueOrErrorToString
                             |> text
                         ]
 

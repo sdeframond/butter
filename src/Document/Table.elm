@@ -88,7 +88,7 @@ empty =
     Table
         { fields = []
         , rows = []
-        , state = T.initialSort "Field1"
+        , state = T.initialSort ""
         , nextId = 1
         , editedCell = Nothing
         , newField = emptyField
@@ -229,7 +229,7 @@ updateData msg data =
 
 
 view : (Msg -> msg) -> Table -> Html msg
-view toMsg (Table ({ rows, state, newField } as data)) =
+view toMsg (Table ({ newField } as data)) =
     H.div
         [ css
             [ displayFlex
@@ -237,42 +237,52 @@ view toMsg (Table ({ rows, state, newField } as data)) =
             , height (pct 100)
             ]
         ]
-        [ H.div
-            [ css
-                [ flex2 (int 1) (int 1)
-                , overflow auto
-                ]
-            ]
-            [ T.view (config toMsg data) state rows |> H.fromUnstyled ]
-        , H.div
-            [ css
-                [ flex3 (int 0) (int 0) (px 100)
-                , border3 (px 1) solid (rgb 0 0 0)
-                , height (pct 100)
-                , display inlineBlock
-                , displayFlex
-                , flexDirection column
-                ]
-            ]
-            [ input [ value newField.name, onInput (OnNewFieldNameInput >> toMsg) ] []
-            , H.button [ onClick (SwitchNewFieldType |> toMsg) ] [ text "Data/Formula" ]
-            , case newField.fieldType of
-                FormulaField formula ->
-                    input
-                        [ value formula
-                        , onInput (FormulaField >> UpdateNewFieldType >> toMsg)
-                        ]
-                        []
-
-                _ ->
-                    text ""
-            , H.button [ onClick (AddFieldClicked |> toMsg) ] [ text "add" ]
-            ]
+        [ tableView toMsg data
+        , newFieldView newField toMsg
         ]
 
 
-config : (Msg -> msg) -> TableData -> T.Config Row msg
-config toMsg { fields, editedCell } =
+tableView : (Msg -> msg) -> TableData -> Html msg
+tableView toMsg ({ rows, state } as data) =
+    H.div
+        [ css
+            [ flex2 (int 1) (int 1)
+            , overflow auto
+            ]
+        ]
+        [ T.view (tableConfig toMsg data) state rows |> H.fromUnstyled ]
+
+
+newFieldView : Field -> (Msg -> msg) -> Html msg
+newFieldView newField toMsg =
+    H.div
+        [ css
+            [ flex3 (int 0) (int 0) (px 100)
+            , border3 (px 1) solid (rgb 0 0 0)
+            , height (pct 100)
+            , display inlineBlock
+            , displayFlex
+            , flexDirection column
+            ]
+        ]
+        [ input [ value newField.name, onInput (OnNewFieldNameInput >> toMsg) ] []
+        , H.button [ onClick (SwitchNewFieldType |> toMsg) ] [ text "Data/Formula" ]
+        , case newField.fieldType of
+            FormulaField formula ->
+                input
+                    [ value formula
+                    , onInput (FormulaField >> UpdateNewFieldType >> toMsg)
+                    ]
+                    []
+
+            _ ->
+                text ""
+        , H.button [ onClick (AddFieldClicked |> toMsg) ] [ text "add" ]
+        ]
+
+
+tableConfig : (Msg -> msg) -> TableData -> T.Config Row msg
+tableConfig toMsg { fields, editedCell } =
     let
         toColumn field =
             T.veryCustomColumn
