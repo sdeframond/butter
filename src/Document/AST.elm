@@ -1,11 +1,13 @@
 module Document.AST exposing
     ( AST(..)
     , BinaryOp(..)
+    , Context
     , Error(..)
     , FormulaAST(..)
     , Memo
     , eval
     , parseCell
+    , parseInt
     , parseName
     , renameSheets
     , toString
@@ -119,6 +121,11 @@ parseName s =
     P.run (name |. end) s |> R.mapError (Error s)
 
 
+parseInt : String -> Result Error Int
+parseInt str =
+    P.run (int |. end) str |> R.mapError (Error str)
+
+
 root : Parser AST
 root =
     let
@@ -168,13 +175,13 @@ referenceHelp str =
         ]
 
 
-myInt : Parser Int
-myInt =
+int : Parser Int
+int =
     oneOf
         [ succeed negate
             |. symbol "-"
-            |= int
-        , int
+            |= P.int
+        , P.int
         ]
 
 
@@ -183,7 +190,7 @@ term =
     succeed identity
         |= oneOf
             [ reference
-            , map (Literal << IntValue) myInt
+            , map (Literal << IntValue) int
             , succeed (Literal << StringValue)
                 |. symbol "\""
                 |= variable { start = always True, inner = \c -> c /= '"', reserved = Set.empty }
@@ -271,7 +278,6 @@ evalFormula context memo formulaAst =
                     R.map2 f a b |> R.andThen identity
             in
             ( andThen2 applyOp xRes yRes, yMemo )
-
     in
     case formulaAst of
         Literal v ->

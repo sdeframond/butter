@@ -1,10 +1,13 @@
 module Document.Types exposing
-    ( Error(..)
+    ( DataType(..)
+    , Error(..)
     , LocatedName
     , Name
     , Position(..)
     , Value(..)
-    , ValueOrError, valueOrErrorToString
+    , ValueOrError
+    , valueOrErrorToString
+    , valueToString
     )
 
 
@@ -35,6 +38,22 @@ type Value
 type alias ValueOrError =
     Result Error Value
 
+
+type DataType
+    = IntType
+    | StringType
+
+
+valueToString : Value -> String
+valueToString value =
+    case value of
+        IntValue i ->
+            String.fromInt i
+
+        StringValue s ->
+            s
+
+
 valueOrErrorToString : ValueOrError -> String
 valueOrErrorToString val =
     case val of
@@ -47,12 +66,8 @@ valueOrErrorToString val =
                     Debug.toString r
 
         Ok v ->
-            case v of
-                IntValue i ->
-                    String.fromInt i
+            valueToString v
 
-                StringValue s ->
-                    s
 
 type Position a
     = Before a

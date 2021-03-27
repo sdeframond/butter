@@ -1,16 +1,18 @@
-TODO
+Todo
 ====
 
-- Feature : Formulas in tables
+- Enabler : Test coverage
+- Enabler : Move Document.* back into the root folder.
 - Feature : Pivot tables
 - Feature : Save to file (and load file)
 - Feature : Local storage
 - Feature : Functions (which ones ?)
 - Feature : Support large sheets (#row and col > 1_000_000)
+- Feature : Edit table field definition
 - Feature : Cancel cell edition with Echap
 - Feature : Cancel sheet edition with Echap
 - Feature : CSV import
-- Feature : Copy/paste (bonus : suport copy-parting from Excel)
+- Feature : Copy/paste (bonus : suport copy-pasting from Excel)
 - Feature : More operators (* , ^, /, unary +, ++ on strings) and parenthesis 
 - Feature : Re-order sheets
 - Feature : Support floating precision numbers
@@ -18,8 +20,14 @@ TODO
 - Refactor : Move SheetList into an abstract SelectionList module (or ZipList ?)
 - Refactor : Move sheet selection and edition into Document (maybe ?)
 
-DOING
+Doing
 =====
+
+- 2021-03-28 - Feature : Formulas in tables
+    TODO : absolute references to other sheets.
+
+Notes
+-----
 
 Table cell:
     - either a literal value
@@ -37,7 +45,7 @@ Table ranges :
     - Syntax : `MyTable.MyColumn`
 
 
-DONE
+Done
 ====
 
 - 2021-03-23 - Refactor : Move evaluation code into AST

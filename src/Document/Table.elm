@@ -8,6 +8,8 @@ module Document.Table exposing
 
 import Css exposing (..)
 import Dict as D exposing (Dict)
+import Document.AST
+import Document.Types exposing (DataType(..), ValueOrError)
 import Html.Styled as H
     exposing
         ( Html
@@ -40,17 +42,20 @@ type alias TableData =
 
 
 type alias Field =
-    { name : String, edit : String, fieldType : FieldType }
+    { name : String
+    , edit : String
+    , fieldType : FieldType
+    }
 
 
 type FieldType
-    = DataField
+    = DataField DataType
     | FormulaField String
 
 
 emptyField : Field
 emptyField =
-    { name = "", edit = "", fieldType = DataField }
+    { name = "", edit = "", fieldType = DataField StringType }
 
 
 isValidField : Field -> Bool
@@ -58,7 +63,7 @@ isValidField { name, fieldType } =
     name
         /= ""
         && (case fieldType of
-                DataField ->
+                DataField _ ->
                     True
 
                 FormulaField formula ->
@@ -76,11 +81,12 @@ type Msg
     | KeyDown Int
     | EditCell Int String String
     | UpdateEditedCell String
-    | AddFieldClicked
-    | OnNewFieldNameInput String
-    | RemoveColumnButtonClicked String
-    | SwitchNewFieldType
-    | UpdateNewFieldType FieldType
+    | OnClickAddFieldBtn
+    | OnInputNewFieldName String
+    | OnClickRemoveColumnBtn String
+    | OnClickNewFieldTypeBtn
+    | OnClickNewFieldDataTypeBtn
+    | OnInputNewFieldFormula String
 
 
 empty : Table
@@ -122,6 +128,12 @@ updateData msg data =
                                 )
                                 d.rows
                     }
+
+        setNewFieldType type_ d =
+            { d | newField = setFieldType type_ data.newField }
+
+        setFieldType type_ field =
+            { field | fieldType = type_ }
     in
     case msg of
         SetTableState state ->
@@ -177,7 +189,7 @@ updateData msg data =
                 Just ( cellRef, _ ) ->
                     { data | editedCell = Just ( cellRef, content ) }
 
-        AddFieldClicked ->
+        OnClickAddFieldBtn ->
             if isValidField data.newField then
                 { data
                     | newField = emptyField
@@ -187,45 +199,48 @@ updateData msg data =
             else
                 data
 
-        OnNewFieldNameInput name ->
+        OnInputNewFieldName name ->
             let
                 newField =
                     Debug.log "" data.newField
             in
             { data | newField = { newField | name = name } }
 
-        RemoveColumnButtonClicked name ->
+        OnClickRemoveColumnBtn name ->
             { data
                 | fields = L.filter (.name >> (/=) name) data.fields
                 , rows = L.map (\r -> { r | cells = D.remove name r.cells }) data.rows
             }
 
-        SwitchNewFieldType ->
-            let
-                newField =
-                    data.newField
-            in
-            { data
-                | newField =
-                    { newField
-                        | fieldType =
-                            case newField.fieldType of
-                                DataField ->
-                                    FormulaField ""
+        OnClickNewFieldTypeBtn ->
+            commit data
+                |> (setNewFieldType <|
+                        case data.newField.fieldType of
+                            DataField _ ->
+                                FormulaField ""
 
-                                FormulaField _ ->
-                                    DataField
-                    }
-            }
+                            FormulaField _ ->
+                                DataField StringType
+                   )
 
-        UpdateNewFieldType ft ->
-            let
-                newField =
-                    data.newField
-            in
-            { data
-                | newField = { newField | fieldType = ft }
-            }
+        OnClickNewFieldDataTypeBtn ->
+            commit data
+                |> (case data.newField.fieldType of
+                        FormulaField _ ->
+                            identity
+
+                        DataField dataType ->
+                            setNewFieldType <|
+                                case dataType of
+                                    IntType ->
+                                        DataField StringType
+
+                                    StringType ->
+                                        DataField IntType
+                   )
+
+        OnInputNewFieldFormula input ->
+            setNewFieldType (FormulaField input) data
 
 
 view : (Msg -> msg) -> Table -> Html msg
@@ -265,19 +280,33 @@ newFieldView newField toMsg =
             , flexDirection column
             ]
         ]
-        [ input [ value newField.name, onInput (OnNewFieldNameInput >> toMsg) ] []
-        , H.button [ onClick (SwitchNewFieldType |> toMsg) ] [ text "Data/Formula" ]
+        [ input [ value newField.name, onInput (OnInputNewFieldName >> toMsg) ] []
+        , H.button [ onClick (OnClickNewFieldTypeBtn |> toMsg) ]
+            [ case newField.fieldType of
+                FormulaField _ ->
+                    text "Formula"
+
+                DataField _ ->
+                    text "Data"
+            ]
         , case newField.fieldType of
             FormulaField formula ->
                 input
                     [ value formula
-                    , onInput (FormulaField >> UpdateNewFieldType >> toMsg)
+                    , onInput (OnInputNewFieldFormula >> toMsg)
                     ]
                     []
 
-            _ ->
-                text ""
-        , H.button [ onClick (AddFieldClicked |> toMsg) ] [ text "add" ]
+            DataField dataType ->
+                H.button [ onClick (OnClickNewFieldDataTypeBtn |> toMsg) ]
+                    [ case dataType of
+                        IntType ->
+                            text "Int"
+
+                        StringType ->
+                            text "String"
+                    ]
+        , H.button [ onClick (OnClickAddFieldBtn |> toMsg) ] [ text "add" ]
         ]
 
 
@@ -288,8 +317,101 @@ tableConfig toMsg { fields, editedCell } =
             T.veryCustomColumn
                 { name = field.name
                 , sorter = T.decreasingOrIncreasingBy (.cells >> D.get field.name >> M.withDefault "")
-                , viewData = cellView field editedCell toMsg
+                , viewData = fieldView field
                 }
+
+        defaultCellView name { id, cells } =
+            text
+                >> L.singleton
+                >> span
+                    [ onClick
+                        (D.get name cells
+                            |> M.withDefault ""
+                            |> EditCell id name
+                            |> toMsg
+                        )
+                    ]
+
+        cellInput content =
+            H.input
+                [ onInput (UpdateEditedCell >> toMsg)
+                , value content
+                ]
+                []
+
+        fieldView : Field -> Row -> T.HtmlDetails msg
+        fieldView field row =
+            evalField field row
+                |> Document.Types.valueOrErrorToString
+                |> (case field.fieldType of
+                        DataField _ ->
+                            case editedCell of
+                                Just ( cellRef, content ) ->
+                                    if cellRef == ( row.id, field.name ) then
+                                        always (cellInput content)
+
+                                    else
+                                        defaultCellView field.name row
+
+                                Nothing ->
+                                    defaultCellView field.name row
+
+                        FormulaField _ ->
+                            text
+                                >> L.singleton
+                                >> span []
+                   )
+                |> H.toUnstyled
+                |> L.singleton
+                |> T.HtmlDetails []
+
+        evalField : Field -> Row -> ValueOrError
+        evalField field row =
+            let
+                resolveRelative memo name =
+                    D.get ( "", name ) memo
+                        |> M.map (\v -> ( v, memo ))
+                        |> M.withDefault
+                            (D.get name (fields |> L.map (\f -> ( f.name, f )) |> D.fromList)
+                                |> Result.fromMaybe (Document.Types.UndefinedNameError ( "", name ))
+                                |> Result.andThen (\f -> evalField f row)
+                                |> (\v -> ( v, memo ))
+                            )
+
+                context : Document.AST.Context
+                context =
+                    { resolveAbsolute = \memo ( _, name ) -> resolveRelative memo name
+                    , resolveRelative = resolveRelative
+                    }
+            in
+            case field.fieldType of
+                DataField dataType ->
+                    case dataType of
+                        StringType ->
+                            D.get field.name row.cells
+                                |> M.withDefault ""
+                                |> Document.Types.StringValue
+                                |> Ok
+
+                        IntType ->
+                            D.get field.name row.cells
+                                |> M.withDefault ""
+                                |> Document.AST.parseInt
+                                |> Result.mapError (always Document.Types.ParsingError)
+                                |> Result.map Document.Types.IntValue
+
+                FormulaField formula ->
+                    Document.AST.parseCell formula
+                        |> Result.mapError (always Document.Types.ParsingError)
+                        |> Result.map (Document.AST.eval context D.empty)
+                        |> (\result ->
+                                case result of
+                                    Err e ->
+                                        Err e
+
+                                    Ok ( vOrE, _ ) ->
+                                        vOrE
+                           )
 
         customizations =
             { defaultCustomizations
@@ -303,49 +425,6 @@ tableConfig toMsg { fields, editedCell } =
         , columns = fields |> L.map toColumn
         , customizations = customizations
         }
-
-
-cellView : Field -> Maybe ( ( Int, String ), String ) -> (Msg -> msg) -> Row -> T.HtmlDetails msg
-cellView { name, fieldType } editedCell toMsg { id, cells } =
-    let
-        defaultCellView =
-            D.get name cells
-                |> M.withDefault ""
-                |> text
-                |> L.singleton
-                |> span
-                    [ onClick
-                        (D.get name cells
-                            |> M.withDefault ""
-                            |> EditCell id name
-                            |> toMsg
-                        )
-                    ]
-                |> H.toUnstyled
-    in
-    T.HtmlDetails []
-        [ case fieldType of
-            DataField ->
-                case editedCell of
-                    Just ( cellRef, content ) ->
-                        if cellRef == ( id, name ) then
-                            H.toUnstyled <|
-                                H.input
-                                    [ onInput (UpdateEditedCell >> toMsg)
-                                    , value content
-                                    ]
-                                    []
-
-                        else
-                            defaultCellView
-
-                    Nothing ->
-                        defaultCellView
-
-            FormulaField formula ->
-                text formula |> H.toUnstyled
-        ]
-
 
 tfoot toMsg fields =
     let
@@ -429,6 +508,6 @@ theadHelp toMsg ( name, status, onClick_ ) =
                         :: base
 
         deleteButton =
-            span [ onClick (RemoveColumnButtonClicked name |> toMsg) ] [ text "X" ]
+            span [ onClick (OnClickRemoveColumnBtn name |> toMsg) ] [ text "X" ]
     in
     th [ css [ position sticky, top (px 0) ] ] (text name :: sortArrow [ deleteButton ])
