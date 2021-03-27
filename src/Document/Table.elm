@@ -35,12 +35,35 @@ type alias TableData =
     , state : T.State
     , nextId : Int
     , editedCell : Maybe ( ( Int, String ), String )
-    , newColumnName : String
+    , newField : Field
     }
 
 
 type alias Field =
-    { name : String, edit : String }
+    { name : String, edit : String, fieldType : FieldType }
+
+
+type FieldType
+    = DataField
+    | FormulaField String
+
+
+emptyField : Field
+emptyField =
+    { name = "", edit = "", fieldType = DataField }
+
+
+isValidField : Field -> Bool
+isValidField { name, fieldType } =
+    name
+        /= ""
+        && (case fieldType of
+                DataField ->
+                    True
+
+                FormulaField formula ->
+                    formula /= ""
+           )
 
 
 type alias Row =
@@ -53,9 +76,11 @@ type Msg
     | KeyDown Int
     | EditCell Int String String
     | UpdateEditedCell String
-    | AddColumnClicked
-    | OnNewColumnNameInput String
+    | AddFieldClicked
+    | OnNewFieldNameInput String
     | RemoveColumnButtonClicked String
+    | SwitchNewFieldType
+    | UpdateNewFieldType FieldType
 
 
 empty : Table
@@ -66,7 +91,7 @@ empty =
         , state = T.initialSort "Field1"
         , nextId = 1
         , editedCell = Nothing
-        , newColumnName = ""
+        , newField = emptyField
         }
 
 
@@ -152,18 +177,22 @@ updateData msg data =
                 Just ( cellRef, _ ) ->
                     { data | editedCell = Just ( cellRef, content ) }
 
-        AddColumnClicked ->
-            if data.newColumnName /= "" then
+        AddFieldClicked ->
+            if isValidField data.newField then
                 { data
-                    | newColumnName = ""
-                    , fields = data.fields ++ [ { name = data.newColumnName, edit = "" } ]
+                    | newField = emptyField
+                    , fields = data.fields ++ [ data.newField ]
                 }
 
             else
                 data
 
-        OnNewColumnNameInput name ->
-            { data | newColumnName = name }
+        OnNewFieldNameInput name ->
+            let
+                newField =
+                    Debug.log "" data.newField
+            in
+            { data | newField = { newField | name = name } }
 
         RemoveColumnButtonClicked name ->
             { data
@@ -171,26 +200,91 @@ updateData msg data =
                 , rows = L.map (\r -> { r | cells = D.remove name r.cells }) data.rows
             }
 
+        SwitchNewFieldType ->
+            let
+                newField =
+                    data.newField
+            in
+            { data
+                | newField =
+                    { newField
+                        | fieldType =
+                            case newField.fieldType of
+                                DataField ->
+                                    FormulaField ""
+
+                                FormulaField _ ->
+                                    DataField
+                    }
+            }
+
+        UpdateNewFieldType ft ->
+            let
+                newField =
+                    data.newField
+            in
+            { data
+                | newField = { newField | fieldType = ft }
+            }
+
 
 view : (Msg -> msg) -> Table -> Html msg
-view toMsg (Table ({ rows, state } as data)) =
-    T.view (config toMsg data) state rows |> H.fromUnstyled
+view toMsg (Table ({ rows, state, newField } as data)) =
+    H.div
+        [ css
+            [ displayFlex
+            , flexDirection Css.row
+            , height (pct 100)
+            ]
+        ]
+        [ H.div
+            [ css
+                [ flex2 (int 1) (int 1)
+                , overflow auto
+                ]
+            ]
+            [ T.view (config toMsg data) state rows |> H.fromUnstyled ]
+        , H.div
+            [ css
+                [ flex3 (int 0) (int 0) (px 100)
+                , border3 (px 1) solid (rgb 0 0 0)
+                , height (pct 100)
+                , display inlineBlock
+                , displayFlex
+                , flexDirection column
+                ]
+            ]
+            [ input [ value newField.name, onInput (OnNewFieldNameInput >> toMsg) ] []
+            , H.button [ onClick (SwitchNewFieldType |> toMsg) ] [ text "Data/Formula" ]
+            , case newField.fieldType of
+                FormulaField formula ->
+                    input
+                        [ value formula
+                        , onInput (FormulaField >> UpdateNewFieldType >> toMsg)
+                        ]
+                        []
+
+                _ ->
+                    text ""
+            , H.button [ onClick (AddFieldClicked |> toMsg) ] [ text "add" ]
+            ]
+        ]
 
 
 config : (Msg -> msg) -> TableData -> T.Config Row msg
-config toMsg { fields, editedCell, newColumnName } =
+config toMsg { fields, editedCell } =
     let
-        toColumn { name } =
+        toColumn field =
             T.veryCustomColumn
-                { name = name
-                , sorter = T.decreasingOrIncreasingBy (.cells >> D.get name >> M.withDefault "")
-                , viewData = cellView name editedCell toMsg
+                { name = field.name
+                , sorter = T.decreasingOrIncreasingBy (.cells >> D.get field.name >> M.withDefault "")
+                , viewData = cellView field editedCell toMsg
                 }
 
         customizations =
             { defaultCustomizations
                 | tfoot = Just (tfoot toMsg fields)
-                , thead = thead newColumnName fields toMsg
+                , thead = thead fields toMsg
             }
     in
     T.customConfig
@@ -201,8 +295,8 @@ config toMsg { fields, editedCell, newColumnName } =
         }
 
 
-cellView : String -> Maybe ( ( Int, String ), String ) -> (Msg -> msg) -> Row -> T.HtmlDetails msg
-cellView name editedCell toMsg { id, cells } =
+cellView : Field -> Maybe ( ( Int, String ), String ) -> (Msg -> msg) -> Row -> T.HtmlDetails msg
+cellView { name, fieldType } editedCell toMsg { id, cells } =
     let
         defaultCellView =
             D.get name cells
@@ -220,21 +314,26 @@ cellView name editedCell toMsg { id, cells } =
                 |> H.toUnstyled
     in
     T.HtmlDetails []
-        [ case editedCell of
-            Just ( cellRef, content ) ->
-                if cellRef == ( id, name ) then
-                    H.toUnstyled <|
-                        H.input
-                            [ onInput (UpdateEditedCell >> toMsg)
-                            , value content
-                            ]
-                            []
+        [ case fieldType of
+            DataField ->
+                case editedCell of
+                    Just ( cellRef, content ) ->
+                        if cellRef == ( id, name ) then
+                            H.toUnstyled <|
+                                H.input
+                                    [ onInput (UpdateEditedCell >> toMsg)
+                                    , value content
+                                    ]
+                                    []
 
-                else
-                    defaultCellView
+                        else
+                            defaultCellView
 
-            Nothing ->
-                defaultCellView
+                    Nothing ->
+                        defaultCellView
+
+            FormulaField formula ->
+                text formula |> H.toUnstyled
         ]
 
 
@@ -260,19 +359,14 @@ tfoot toMsg fields =
         )
 
 
-thead newColumnName fields toMsg headers =
+thead fields toMsg headers =
     let
         onKeyDown tagger =
             on "keydown" (Decode.map tagger keyCode)
     in
     T.HtmlDetails [] <|
         L.map H.toUnstyled
-            [ H.tr []
-                (List.map (theadHelp toMsg) headers
-                    ++ [ input [ onInput (OnNewColumnNameInput >> toMsg), value newColumnName ] []
-                       , span [ onClick (toMsg AddColumnClicked) ] [ text "add" ]
-                       ]
-                )
+            [ H.tr [] (List.map (theadHelp toMsg) headers)
             , H.tr []
                 (fields
                     |> L.map
