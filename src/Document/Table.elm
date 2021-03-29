@@ -9,7 +9,7 @@ module Document.Table exposing
 import Css exposing (..)
 import Dict as D exposing (Dict)
 import Document.AST
-import Document.Types exposing (DataType(..), ValueOrError)
+import Document.Types exposing (DataType(..), Error(..), LocatedName, Name, ValueOrError)
 import Html.Styled as H
     exposing
         ( Html
@@ -202,7 +202,7 @@ updateData msg data =
         OnInputNewFieldName name ->
             let
                 newField =
-                    Debug.log "" data.newField
+                    data.newField
             in
             { data | newField = { newField | name = name } }
 
@@ -341,7 +341,8 @@ tableConfig toMsg { fields, editedCell } =
 
         fieldView : Field -> Row -> T.HtmlDetails msg
         fieldView field row =
-            evalField field row
+            evalField fields [] D.empty field row
+                |> Tuple.first
                 |> Document.Types.valueOrErrorToString
                 |> (case field.fieldType of
                         DataField _ ->
@@ -365,54 +366,6 @@ tableConfig toMsg { fields, editedCell } =
                 |> L.singleton
                 |> T.HtmlDetails []
 
-        evalField : Field -> Row -> ValueOrError
-        evalField field row =
-            let
-                resolveRelative memo name =
-                    D.get ( "", name ) memo
-                        |> M.map (\v -> ( v, memo ))
-                        |> M.withDefault
-                            (D.get name (fields |> L.map (\f -> ( f.name, f )) |> D.fromList)
-                                |> Result.fromMaybe (Document.Types.UndefinedNameError ( "", name ))
-                                |> Result.andThen (\f -> evalField f row)
-                                |> (\v -> ( v, memo ))
-                            )
-
-                context : Document.AST.Context
-                context =
-                    { resolveAbsolute = \memo ( _, name ) -> resolveRelative memo name
-                    , resolveRelative = resolveRelative
-                    }
-            in
-            case field.fieldType of
-                DataField dataType ->
-                    case dataType of
-                        StringType ->
-                            D.get field.name row.cells
-                                |> M.withDefault ""
-                                |> Document.Types.StringValue
-                                |> Ok
-
-                        IntType ->
-                            D.get field.name row.cells
-                                |> M.withDefault ""
-                                |> Document.AST.parseInt
-                                |> Result.mapError (always Document.Types.ParsingError)
-                                |> Result.map Document.Types.IntValue
-
-                FormulaField formula ->
-                    Document.AST.parseCell formula
-                        |> Result.mapError (always Document.Types.ParsingError)
-                        |> Result.map (Document.AST.eval context D.empty)
-                        |> (\result ->
-                                case result of
-                                    Err e ->
-                                        Err e
-
-                                    Ok ( vOrE, _ ) ->
-                                        vOrE
-                           )
-
         customizations =
             { defaultCustomizations
                 | tfoot = Just (tfoot toMsg fields)
@@ -425,6 +378,70 @@ tableConfig toMsg { fields, editedCell } =
         , columns = fields |> L.map toColumn
         , customizations = customizations
         }
+
+
+evalField : List Field -> List LocatedName -> Document.AST.Memo -> Field -> Row -> ( ValueOrError, Document.AST.Memo )
+evalField fields ancestors memo field row =
+    let
+        resolveRelative : Document.AST.Memo -> Name -> ( ValueOrError, Document.AST.Memo )
+        resolveRelative memo_ name =
+            D.get ( "", name ) memo_
+                |> M.map (\v -> ( v, memo_ ))
+                |> M.withDefault
+                    (D.get name (fields |> L.map (\f -> ( f.name, f )) |> D.fromList)
+                        |> Result.fromMaybe (Document.Types.UndefinedNameError ( "", name ))
+                        |> Result.map (\f -> evalField fields (( "", name ) :: ancestors) memo_ f row)
+                        |> (\result ->
+                                case result of
+                                    Err e ->
+                                        ( Err e, memo_ )
+
+                                    Ok v ->
+                                        v
+                            )
+                    )
+
+        context : Document.AST.Context
+        context =
+            { resolveAbsolute = \memo_ ( _, name ) -> resolveRelative memo_ name
+            , resolveRelative = resolveRelative
+            }
+    in
+    if L.member ( "", field.name ) ancestors then
+        ( Err (CyclicReferenceError ancestors), memo )
+
+    else
+        case field.fieldType of
+            DataField dataType ->
+                (case dataType of
+                    StringType ->
+                        D.get field.name row.cells
+                            |> M.withDefault ""
+                            |> Document.Types.StringValue
+                            |> Ok
+
+                    IntType ->
+                        D.get field.name row.cells
+                            |> M.withDefault ""
+                            |> Document.AST.parseInt
+                            |> Result.mapError (always Document.Types.ParsingError)
+                            |> Result.map Document.Types.IntValue
+                )
+                    |> (\vOrE -> ( vOrE, memo ))
+
+            FormulaField formula ->
+                Document.AST.parseCell formula
+                    |> Result.mapError (always Document.Types.ParsingError)
+                    |> Result.map (Document.AST.eval context memo)
+                    |> (\result ->
+                            case result of
+                                Err e ->
+                                    ( Err e, D.insert ( "", field.name ) (Err e) memo )
+
+                                Ok ( vOrE, newMemo ) ->
+                                    ( vOrE, D.insert ( "", field.name ) vOrE newMemo )
+                        )
+
 
 tfoot toMsg fields =
     let
