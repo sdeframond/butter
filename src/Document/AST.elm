@@ -11,10 +11,13 @@ module Document.AST exposing
     , parseName
     , renameSheets
     , toString
+    , useMemoAndCheckCycle
     )
 
-import Dict exposing (Dict)
+import Dict as D exposing (Dict)
 import Document.Types exposing (Error(..), LocatedName, Name, Value(..), ValueOrError)
+import List as L
+import Maybe as M
 import Parser as P exposing ((|.), (|=), Parser, end, int, lazy, map, oneOf, spaces, succeed, symbol, variable)
 import Result as R
 import Set
@@ -243,6 +246,28 @@ type alias Context =
 
 type alias Memo =
     Dict LocatedName ValueOrError
+
+
+useMemoAndCheckCycle : LocatedName -> Memo -> List LocatedName -> (() -> ( ValueOrError, Memo )) -> ( ValueOrError, Memo )
+useMemoAndCheckCycle path memo ancestors doEval =
+    let
+        memoize ( v, m ) =
+            ( v, D.insert path v m )
+
+        fromMemo =
+            D.get path memo |> M.map (\v -> ( v, memo ))
+    in
+    case fromMemo of
+        Just v ->
+            v
+
+        Nothing ->
+            memoize <|
+                if L.member path ancestors then
+                    ( Err (CyclicReferenceError ancestors), memo )
+
+                else
+                    doEval ()
 
 
 eval : Context -> Memo -> AST -> ( ValueOrError, Memo )

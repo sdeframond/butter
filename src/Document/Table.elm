@@ -8,7 +8,7 @@ module Document.Table exposing
 
 import Css exposing (..)
 import Dict as D exposing (Dict)
-import Document.AST
+import Document.AST exposing (Memo)
 import Document.Types exposing (DataType(..), Error(..), LocatedName, Name, ValueOrError)
 import Html.Styled as H
     exposing
@@ -385,62 +385,59 @@ evalField fields ancestors memo field row =
     let
         resolveRelative : Document.AST.Memo -> Name -> ( ValueOrError, Document.AST.Memo )
         resolveRelative memo_ name =
-            D.get ( "", name ) memo_
-                |> M.map (\v -> ( v, memo_ ))
-                |> M.withDefault
-                    (D.get name (fields |> L.map (\f -> ( f.name, f )) |> D.fromList)
-                        |> Result.fromMaybe (Document.Types.UndefinedNameError ( "", name ))
-                        |> Result.map (\f -> evalField fields (( "", name ) :: ancestors) memo_ f row)
-                        |> (\result ->
-                                case result of
-                                    Err e ->
-                                        ( Err e, memo_ )
+            D.get name (fields |> L.map (\f -> ( f.name, f )) |> D.fromList)
+                |> Result.fromMaybe (Document.Types.UndefinedNameError ( "", name ))
+                |> Result.map (\f -> evalField fields (( "", name ) :: ancestors) memo_ f row)
+                |> (\result ->
+                        case result of
+                            Err e ->
+                                ( Err e, memo_ )
 
-                                    Ok v ->
-                                        v
-                            )
-                    )
+                            Ok v ->
+                                v
+                   )
 
         context : Document.AST.Context
         context =
             { resolveAbsolute = \memo_ ( _, name ) -> resolveRelative memo_ name
             , resolveRelative = resolveRelative
             }
+
+        evalDataField dataType =
+            D.get field.name row.cells
+                |> M.withDefault ""
+                |> (case dataType of
+                        StringType ->
+                            Document.Types.StringValue >> Ok
+
+                        IntType ->
+                            Document.AST.parseInt
+                                >> Result.mapError (always Document.Types.ParsingError)
+                                >> Result.map Document.Types.IntValue
+                   )
+
+        evalFormulaField formula =
+            Document.AST.parseCell formula
+                |> Result.mapError (always Document.Types.ParsingError)
+                |> Result.map (Document.AST.eval context memo)
+                |> (\result ->
+                        case result of
+                            Err e ->
+                                ( Err e, memo )
+
+                            Ok tuple ->
+                                tuple
+                   )
+
+        go () =
+            case field.fieldType of
+                DataField dataType ->
+                    evalDataField dataType |> (\vOrE -> ( vOrE, memo ))
+
+                FormulaField formula ->
+                    evalFormulaField formula
     in
-    if L.member ( "", field.name ) ancestors then
-        ( Err (CyclicReferenceError ancestors), memo )
-
-    else
-        case field.fieldType of
-            DataField dataType ->
-                (case dataType of
-                    StringType ->
-                        D.get field.name row.cells
-                            |> M.withDefault ""
-                            |> Document.Types.StringValue
-                            |> Ok
-
-                    IntType ->
-                        D.get field.name row.cells
-                            |> M.withDefault ""
-                            |> Document.AST.parseInt
-                            |> Result.mapError (always Document.Types.ParsingError)
-                            |> Result.map Document.Types.IntValue
-                )
-                    |> (\vOrE -> ( vOrE, memo ))
-
-            FormulaField formula ->
-                Document.AST.parseCell formula
-                    |> Result.mapError (always Document.Types.ParsingError)
-                    |> Result.map (Document.AST.eval context memo)
-                    |> (\result ->
-                            case result of
-                                Err e ->
-                                    ( Err e, D.insert ( "", field.name ) (Err e) memo )
-
-                                Ok ( vOrE, newMemo ) ->
-                                    ( vOrE, D.insert ( "", field.name ) vOrE newMemo )
-                        )
+    Document.AST.useMemoAndCheckCycle ( "", field.name ) memo ancestors go
 
 
 tfoot toMsg fields =

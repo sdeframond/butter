@@ -325,9 +325,6 @@ get name (Document data) =
 evalCell : DocData -> List LocatedName -> AST.Memo -> LocatedName -> ( ValueOrError, AST.Memo )
 evalCell data ancestors memo name =
     let
-        memoize ( v, m ) =
-            ( v, D.insert name v m )
-
         resolveAbsolute =
             evalCell data (name :: ancestors)
 
@@ -337,27 +334,21 @@ evalCell data ancestors memo name =
                 \newMemo relativeName ->
                     resolveAbsolute newMemo ( T.first name, relativeName )
             }
+
+        go () =
+            getCell (T.first name) (T.second name) data
+                |> R.andThen Cell.parsed
+                |> R.map (AST.eval context memo)
+                |> (\result ->
+                        case result of
+                            Err e ->
+                                ( Err e, memo )
+
+                            Ok v ->
+                                v
+                   )
     in
-    if List.member name ancestors then
-        ( Err <| CyclicReferenceError ancestors, memo )
-
-    else
-        D.get name memo
-            |> M.map (\v -> ( v, memo ))
-            |> M.withDefault
-                (getCell (T.first name) (T.second name) data
-                    |> R.andThen Cell.parsed
-                    |> R.map (AST.eval context memo)
-                    |> (\result ->
-                            case result of
-                                Err e ->
-                                    ( Err e, memo )
-
-                                Ok v ->
-                                    v
-                       )
-                    |> memoize
-                )
+    AST.useMemoAndCheckCycle name memo ancestors go
 
 
 type alias Config msg =
