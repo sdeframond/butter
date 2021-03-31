@@ -6,10 +6,9 @@ module MyTable exposing
     , view
     )
 
+import AST exposing (Memo)
 import Css exposing (..)
 import Dict as D exposing (Dict)
-import AST exposing (Memo)
-import Types exposing (DataType(..), Error(..), LocatedName, Name, ValueOrError)
 import Html.Styled as H
     exposing
         ( Html
@@ -25,6 +24,7 @@ import Json.Decode as Decode
 import List as L
 import Maybe as M
 import Table as T exposing (defaultCustomizations)
+import Types exposing (DataType(..), Error(..), LocatedName, Name, ValueOrError)
 
 
 type Table
@@ -265,7 +265,7 @@ tableView toMsg ({ rows, state } as data) =
             , overflow auto
             ]
         ]
-        [ T.view (tableConfig toMsg data) state rows |> H.fromUnstyled ]
+        [ T.view (sortableTableConfig toMsg data) state rows |> H.fromUnstyled ]
 
 
 newFieldView : Field -> (Msg -> msg) -> Html msg
@@ -310,8 +310,8 @@ newFieldView newField toMsg =
         ]
 
 
-tableConfig : (Msg -> msg) -> TableData -> T.Config Row msg
-tableConfig toMsg { fields, editedCell } =
+sortableTableConfig : (Msg -> msg) -> TableData -> T.Config Row msg
+sortableTableConfig toMsg { fields, editedCell } =
     let
         toColumn field =
             T.veryCustomColumn
@@ -385,9 +385,11 @@ evalField fields ancestors memo field row =
     let
         resolveRelative : AST.Memo -> Name -> ( ValueOrError, AST.Memo )
         resolveRelative memo_ name =
-            D.get name (fields |> L.map (\f -> ( f.name, f )) |> D.fromList)
+            fields
+                |> L.filter (.name >> (==) name)
+                |> L.head
                 |> Result.fromMaybe (Types.UndefinedNameError ( "", name ))
-                |> Result.map (\f -> evalField fields (( "", name ) :: ancestors) memo_ f row)
+                |> Result.map (\f -> evalField fields (( "", field.name ) :: ancestors) memo_ f row)
                 |> (\result ->
                         case result of
                             Err e ->
