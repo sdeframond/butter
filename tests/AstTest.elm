@@ -1,7 +1,7 @@
 module AstTest exposing (..)
 
-import Document.AST exposing (..)
-import Document.Types exposing (Value(..))
+import AST exposing (..)
+import Types exposing (Value(..))
 import Expect
 import List as L
 import Test exposing (..)

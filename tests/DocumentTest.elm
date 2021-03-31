@@ -1,7 +1,7 @@
 module DocumentTest exposing (..)
 
 import Document exposing (..)
-import Document.Types exposing (..)
+import Types exposing (..)
 import Expect
 import Fuzz exposing (int)
 import List as L

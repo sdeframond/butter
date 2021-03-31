@@ -2,7 +2,6 @@ Todo
 ====
 
 - Enabler : Test coverage
-- Enabler : Move Document.* back into the root folder.
 - Feature : Pivot tables
 - Feature : Save to file (and load file)
 - Feature : Local storage
@@ -48,6 +47,7 @@ Table ranges :
 Done
 ====
 
+- 2021-03-31 - Enabler : Move Document.* back into the root folder.
 - 2021-03-23 - Refactor : Move evaluation code into AST
 - 2021-03-22 - Feature : Support for tables
 - 2021-02-02 - Feature : Rename references to a sheet when renaming a sheet

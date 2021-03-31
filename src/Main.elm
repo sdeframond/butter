@@ -4,7 +4,7 @@ import Browser
 import Css exposing (..)
 import Css.Global as Global
 import Document as Doc
-import Document.Types exposing (Name, Position(..))
+import Types exposing (Name, Position(..))
 import Html.Styled exposing (..)
 import Html.Styled.Attributes exposing (css, value)
 import Html.Styled.Events exposing (onClick, onDoubleClick, onInput)

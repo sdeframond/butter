@@ -1,7 +1,7 @@
-module Document.Cell exposing (Cell, fromSource, parsed, renameSheets, source)
+module Cell exposing (Cell, fromSource, parsed, renameSheets, source)
 
-import Document.AST as AST exposing (AST, parseCell)
-import Document.Types exposing (Error(..), Name)
+import AST exposing (AST, parseCell)
+import Types exposing (Error(..), Name)
 import Result as R
 
 

@@ -23,17 +23,17 @@ module Document exposing
 
 import Css exposing (..)
 import Dict as D exposing (Dict)
-import Document.AST as AST
+import AST
     exposing
         ( AST(..)
         , BinaryOp(..)
         , FormulaAST(..)
         , parseName
         )
-import Document.Cell as Cell exposing (Cell)
-import Document.Grid as Grid exposing (Grid)
-import Document.Table as Table exposing (Table)
-import Document.Types as Types exposing (..)
+import Cell exposing (Cell)
+import Grid exposing (Grid)
+import MyTable as Table exposing (Table)
+import Types exposing (..)
 import Html.Styled exposing (..)
 import Html.Styled.Attributes exposing (css)
 import List as L

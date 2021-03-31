@@ -1,4 +1,4 @@
-module Document.AST exposing
+module AST exposing
     ( AST(..)
     , BinaryOp(..)
     , Context
@@ -15,7 +15,7 @@ module Document.AST exposing
     )
 
 import Dict as D exposing (Dict)
-import Document.Types exposing (Error(..), LocatedName, Name, Value(..), ValueOrError)
+import Types exposing (Error(..), LocatedName, Name, Value(..), ValueOrError)
 import List as L
 import Maybe as M
 import Parser as P exposing ((|.), (|=), Parser, end, int, lazy, map, oneOf, spaces, succeed, symbol, variable)

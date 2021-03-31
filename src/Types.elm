@@ -1,4 +1,4 @@
-module Document.Types exposing
+module Types exposing
     ( DataType(..)
     , Error(..)
     , LocatedName

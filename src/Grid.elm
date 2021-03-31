@@ -1,7 +1,7 @@
-module Document.Grid exposing (Cmd(..), Config, Grid, Msg, commit, init, update, view)
+module Grid exposing (Cmd(..), Config, Grid, Msg, commit, init, update, view)
 
 import Css exposing (..)
-import Document.Types exposing (Error(..), Name, Value(..), ValueOrError)
+import Types exposing (Error(..), Name, Value(..), ValueOrError)
 import Html.Styled as H exposing (..)
 import Html.Styled.Attributes exposing (css, value)
 import Html.Styled.Events exposing (onClick, onInput)
@@ -115,7 +115,7 @@ view { toMsg, getCellSource, getCellValue } (Grid editState) =
                         , onClick <| toMsg <| StartEditing cellName (getCellSource cellName)
                         ]
                         [ getCellValue cellName
-                            |> Document.Types.valueOrErrorToString
+                            |> Types.valueOrErrorToString
                             |> text
                         ]
 

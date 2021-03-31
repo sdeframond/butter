@@ -1,4 +1,4 @@
-module Document.Table exposing
+module MyTable exposing
     ( Msg
     , Table
     , empty
@@ -8,8 +8,8 @@ module Document.Table exposing
 
 import Css exposing (..)
 import Dict as D exposing (Dict)
-import Document.AST exposing (Memo)
-import Document.Types exposing (DataType(..), Error(..), LocatedName, Name, ValueOrError)
+import AST exposing (Memo)
+import Types exposing (DataType(..), Error(..), LocatedName, Name, ValueOrError)
 import Html.Styled as H
     exposing
         ( Html
@@ -343,7 +343,7 @@ tableConfig toMsg { fields, editedCell } =
         fieldView field row =
             evalField fields [] D.empty field row
                 |> Tuple.first
-                |> Document.Types.valueOrErrorToString
+                |> Types.valueOrErrorToString
                 |> (case field.fieldType of
                         DataField _ ->
                             case editedCell of
@@ -380,13 +380,13 @@ tableConfig toMsg { fields, editedCell } =
         }
 
 
-evalField : List Field -> List LocatedName -> Document.AST.Memo -> Field -> Row -> ( ValueOrError, Document.AST.Memo )
+evalField : List Field -> List LocatedName -> AST.Memo -> Field -> Row -> ( ValueOrError, AST.Memo )
 evalField fields ancestors memo field row =
     let
-        resolveRelative : Document.AST.Memo -> Name -> ( ValueOrError, Document.AST.Memo )
+        resolveRelative : AST.Memo -> Name -> ( ValueOrError, AST.Memo )
         resolveRelative memo_ name =
             D.get name (fields |> L.map (\f -> ( f.name, f )) |> D.fromList)
-                |> Result.fromMaybe (Document.Types.UndefinedNameError ( "", name ))
+                |> Result.fromMaybe (Types.UndefinedNameError ( "", name ))
                 |> Result.map (\f -> evalField fields (( "", name ) :: ancestors) memo_ f row)
                 |> (\result ->
                         case result of
@@ -397,7 +397,7 @@ evalField fields ancestors memo field row =
                                 v
                    )
 
-        context : Document.AST.Context
+        context : AST.Context
         context =
             { resolveAbsolute = \memo_ ( _, name ) -> resolveRelative memo_ name
             , resolveRelative = resolveRelative
@@ -408,18 +408,18 @@ evalField fields ancestors memo field row =
                 |> M.withDefault ""
                 |> (case dataType of
                         StringType ->
-                            Document.Types.StringValue >> Ok
+                            Types.StringValue >> Ok
 
                         IntType ->
-                            Document.AST.parseInt
-                                >> Result.mapError (always Document.Types.ParsingError)
-                                >> Result.map Document.Types.IntValue
+                            AST.parseInt
+                                >> Result.mapError (always Types.ParsingError)
+                                >> Result.map Types.IntValue
                    )
 
         evalFormulaField formula =
-            Document.AST.parseCell formula
-                |> Result.mapError (always Document.Types.ParsingError)
-                |> Result.map (Document.AST.eval context memo)
+            AST.parseCell formula
+                |> Result.mapError (always Types.ParsingError)
+                |> Result.map (AST.eval context memo)
                 |> (\result ->
                         case result of
                             Err e ->
@@ -437,7 +437,7 @@ evalField fields ancestors memo field row =
                 FormulaField formula ->
                     evalFormulaField formula
     in
-    Document.AST.useMemoAndCheckCycle ( "", field.name ) memo ancestors go
+    AST.useMemoAndCheckCycle ( "", field.name ) memo ancestors go
 
 
 tfoot toMsg fields =
