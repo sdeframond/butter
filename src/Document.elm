@@ -37,7 +37,6 @@ import Types exposing (..)
 import Html.Styled exposing (..)
 import Html.Styled.Attributes exposing (css)
 import List as L
-import Maybe as M
 import Result as R
 import Tuple as T
 
@@ -306,7 +305,7 @@ getCell : Name -> Name -> DocData -> Result Error Cell
 getCell sheetName cellName data =
     if sheetExists sheetName data then
         D.get ( sheetName, cellName ) data.cells
-            |> R.fromMaybe (UndefinedNameError ( sheetName, cellName ))
+            |> R.fromMaybe (UndefinedGlobalReferenceError ( sheetName, cellName ))
 
     else
         Err <| UndefinedSheetError sheetName

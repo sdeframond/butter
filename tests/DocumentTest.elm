@@ -183,7 +183,7 @@ suite =
         , describe "get"
             [ test "empty value" <|
                 \_ ->
-                    expectError (UndefinedNameError ( "sheet", "a" ))
+                    expectError (UndefinedGlobalReferenceError ( "sheet", "a" ))
                         (init "sheet" gridSheet |> get "a")
             , test "single value" <|
                 \_ ->
@@ -211,7 +211,7 @@ suite =
                     expectOk (IntValue (i + j)) (get "a" doc)
             , test "empty string" <|
                 \_ ->
-                    expectError (UndefinedNameError ( "sheet", "a" ))
+                    expectError (UndefinedGlobalReferenceError ( "sheet", "a" ))
                         (get "a" <| fromList "sheet" [ ( "a", "" ) ])
             , test "simple reference" <|
                 \_ ->

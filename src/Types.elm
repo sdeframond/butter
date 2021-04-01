@@ -13,8 +13,8 @@ module Types exposing
 
 type Error
     = ParsingError
-    | UndefinedNameError LocatedName
-    | UndefinedLocalReference Name
+    | UndefinedGlobalReferenceError LocatedName
+    | UndefinedLocalReferenceError Name
     | TypeError String
     | CyclicReferenceError (List LocatedName)
     | UndefinedSheetError Name
@@ -60,7 +60,7 @@ valueOrErrorToString val =
     case val of
         Err e ->
             case e of
-                UndefinedNameError _ ->
+                UndefinedGlobalReferenceError _ ->
                     ""
 
                 r ->

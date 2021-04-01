@@ -398,7 +398,7 @@ evalField resolveAbsolute fields ancestors memo field row =
             fields
                 |> L.filter (.name >> (==) name)
                 |> L.head
-                |> Result.fromMaybe (Types.UndefinedLocalReference name)
+                |> Result.fromMaybe (Types.UndefinedLocalReferenceError name)
                 |> Result.map (\f -> evalField resolveAbsolute fields (( "", field.name ) :: ancestors) memo_ f row)
                 |> (\result ->
                         case result of
