@@ -243,8 +243,8 @@ updateData msg data =
             setNewFieldType (FormulaField input) data
 
 
-view : (Msg -> msg) -> Table -> Html msg
-view toMsg (Table ({ newField } as data)) =
+view : Config msg -> Table -> Html msg
+view config (Table ({ newField } as data)) =
     H.div
         [ css
             [ displayFlex
@@ -252,20 +252,20 @@ view toMsg (Table ({ newField } as data)) =
             , height (pct 100)
             ]
         ]
-        [ tableView toMsg data
-        , newFieldView newField toMsg
+        [ tableView config data
+        , newFieldView newField config.toMsg
         ]
 
 
-tableView : (Msg -> msg) -> TableData -> Html msg
-tableView toMsg ({ rows, state } as data) =
+tableView : Config msg -> TableData -> Html msg
+tableView config ({ rows, state } as data) =
     H.div
         [ css
             [ flex2 (int 1) (int 1)
             , overflow auto
             ]
         ]
-        [ T.view (sortableTableConfig toMsg data) state rows |> H.fromUnstyled ]
+        [ T.view (sortableTableConfig config data) state rows |> H.fromUnstyled ]
 
 
 newFieldView : Field -> (Msg -> msg) -> Html msg
@@ -310,8 +310,18 @@ newFieldView newField toMsg =
         ]
 
 
-sortableTableConfig : (Msg -> msg) -> TableData -> T.Config Row msg
-sortableTableConfig toMsg { fields, editedCell } =
+type alias Resolver =
+    Memo -> LocatedName -> ( ValueOrError, Memo )
+
+
+type alias Config msg =
+    { toMsg : Msg -> msg
+    , resolveAbsolute : Resolver
+    }
+
+
+sortableTableConfig : Config msg -> TableData -> T.Config Row msg
+sortableTableConfig {toMsg, resolveAbsolute} { fields, editedCell } =
     let
         toColumn field =
             T.veryCustomColumn
@@ -341,7 +351,7 @@ sortableTableConfig toMsg { fields, editedCell } =
 
         fieldView : Field -> Row -> T.HtmlDetails msg
         fieldView field row =
-            evalField fields [] D.empty field row
+            evalField resolveAbsolute fields [] D.empty field row
                 |> Tuple.first
                 |> Types.valueOrErrorToString
                 |> (case field.fieldType of
@@ -380,16 +390,16 @@ sortableTableConfig toMsg { fields, editedCell } =
         }
 
 
-evalField : List Field -> List LocatedName -> AST.Memo -> Field -> Row -> ( ValueOrError, AST.Memo )
-evalField fields ancestors memo field row =
+evalField : Resolver -> List Field -> List LocatedName -> AST.Memo -> Field -> Row -> ( ValueOrError, AST.Memo )
+evalField resolveAbsolute fields ancestors memo field row =
     let
         resolveRelative : AST.Memo -> Name -> ( ValueOrError, AST.Memo )
         resolveRelative memo_ name =
             fields
                 |> L.filter (.name >> (==) name)
                 |> L.head
-                |> Result.fromMaybe (Types.UndefinedNameError ( "", name ))
-                |> Result.map (\f -> evalField fields (( "", field.name ) :: ancestors) memo_ f row)
+                |> Result.fromMaybe (Types.UndefinedLocalReference name)
+                |> Result.map (\f -> evalField resolveAbsolute fields (( "", field.name ) :: ancestors) memo_ f row)
                 |> (\result ->
                         case result of
                             Err e ->
@@ -401,7 +411,7 @@ evalField fields ancestors memo field row =
 
         context : AST.Context
         context =
-            { resolveAbsolute = \memo_ ( _, name ) -> resolveRelative memo_ name
+            { resolveAbsolute = resolveAbsolute
             , resolveRelative = resolveRelative
             }
 

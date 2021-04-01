@@ -356,12 +356,18 @@ type alias Config msg =
 
 
 view : Config msg -> Document -> Html msg
-view { toMsg } ((Document { currentSheetItem }) as doc) =
+view { toMsg } ((Document ({ currentSheetItem } as data)) as doc) =
     let
         gridConfig =
             { toMsg = GridMsg >> toMsg
             , getCellValue = \name -> get name doc
             , getCellSource = \name -> cellSource name doc |> R.withDefault ""
+            }
+
+        tableConfig =
+            { toMsg = TableMsg >> toMsg
+            , resolveAbsolute = \memo name ->
+                evalCell data [] memo name
             }
     in
     div
@@ -376,5 +382,5 @@ view { toMsg } ((Document { currentSheetItem }) as doc) =
                 Grid.view gridConfig grid
 
             TableSheet table ->
-                Table.view (TableMsg >> toMsg) table
+                Table.view tableConfig table
         ]

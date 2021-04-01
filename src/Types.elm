@@ -14,6 +14,7 @@ module Types exposing
 type Error
     = ParsingError
     | UndefinedNameError LocatedName
+    | UndefinedLocalReference Name
     | TypeError String
     | CyclicReferenceError (List LocatedName)
     | UndefinedSheetError Name
