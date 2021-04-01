@@ -5,6 +5,8 @@
     "postinstall": "elm-tooling install"
   },
   "devDependencies": {
+    "elm": "*",
+    "elm-live": "^4.0.2",
     "elm-tooling": "^1.3.0"
   }
 }
