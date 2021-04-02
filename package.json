@@ -2,7 +2,7 @@
   "private": true,
   "name": "butter",
   "scripts": {
-    "postinstall": "elm-tooling install"
+    "postinstall": "npx elm-tooling install"
   },
   "devDependencies": {
     "elm": "*",

@@ -23,7 +23,7 @@ Doing
 =====
 
 - 2021-03-28 - Feature : Formulas in tables
-    TODO : absolute references to other sheets.
+    TODO : tests
 
 Notes
 -----
