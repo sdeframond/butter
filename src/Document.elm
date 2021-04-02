@@ -1,6 +1,7 @@
 module Document exposing
     ( Document
     , Msg
+    , Position(..)
     , Sheet(..)
     , cellSource
     , commitEdit
@@ -26,7 +27,6 @@ import AST
         ( AST(..)
         , BinaryOp(..)
         , FormulaAST(..)
-        , parseName
         )
 import Cell exposing (Cell)
 import Css exposing (..)
@@ -34,11 +34,11 @@ import Dict as D exposing (Dict)
 import Grid exposing (Grid)
 import Html.Styled exposing (..)
 import Html.Styled.Attributes exposing (css)
-import List as L
 import MyTable as Table exposing (Table)
 import Result as R
 import Tuple as T
 import Types exposing (..)
+import ZipList as ZL exposing (ZipList)
 
 
 type Document
@@ -47,9 +47,7 @@ type Document
 
 type alias DocData =
     { cells : Dict LocatedName Cell
-    , sheetItemsBefore : List SheetItem
-    , currentSheetItem : SheetItem
-    , sheetItemsAfter : List SheetItem
+    , sheets : ZipList SheetItem
     }
 
 
@@ -88,16 +86,19 @@ updateData : Msg -> DocData -> DocData
 updateData msg data =
     let
         { sheet, name } =
-            data.currentSheetItem
+            ZL.current data.sheets
     in
     case ( msg, sheet ) of
         ( GridMsg gridMsg, GridSheet grid ) ->
             updateGrid (Grid.update gridMsg grid) data
 
         ( TableMsg tableMsg, TableSheet table ) ->
-            { data
-                | currentSheetItem =
+            let
+                newCurrent =
                     SheetItem name (TableSheet <| Table.update tableMsg table)
+            in
+            { data
+                | sheets = ZL.setCurrent newCurrent data.sheets
             }
 
         ( _, _ ) ->
@@ -105,9 +106,9 @@ updateData msg data =
 
 
 commitEdit : Document -> Document
-commitEdit (Document ({ currentSheetItem } as data)) =
+commitEdit (Document ({ sheets } as data)) =
     Document <|
-        case currentSheetItem.sheet of
+        case ZL.current sheets |> .sheet of
             GridSheet grid ->
                 updateGrid (Grid.commit grid) data
 
@@ -119,10 +120,10 @@ updateGrid : ( Grid, Grid.Cmd ) -> DocData -> DocData
 updateGrid ( newGrid, gridCmd ) data =
     let
         newItem =
-            SheetItem data.currentSheetItem.name (GridSheet newGrid)
+            SheetItem (ZL.current data.sheets |> .name) (GridSheet newGrid)
 
         newData =
-            { data | currentSheetItem = newItem }
+            { data | sheets = ZL.setCurrent newItem data.sheets }
     in
     case gridCmd of
         Grid.NoCmd ->
@@ -136,61 +137,41 @@ init : Name -> Sheet -> Document
 init name sheet =
     Document
         { cells = D.empty
-        , currentSheetItem = SheetItem name sheet
-        , sheetItemsBefore = []
-        , sheetItemsAfter = []
+        , sheets = ZL.singleton (SheetItem name sheet)
         }
 
 
-sheetNames : Document -> List (Types.Position Name)
-sheetNames (Document { sheetItemsBefore, currentSheetItem, sheetItemsAfter }) =
-    L.concat
-        [ L.map (.name >> Before) sheetItemsBefore
-        , [ Current currentSheetItem.name ]
-        , L.map (.name >> After) sheetItemsAfter
-        ]
+type Position a
+    = Before a
+    | Current a
+    | After a
+
+
+sheetNames : Document -> List (Position Name)
+sheetNames (Document { sheets }) =
+    ZL.map .name sheets
+        |> ZL.toListWithPosition
+            { before = Before
+            , current = Current
+            , after = After
+            }
+
+
+currentSheetName : DocData -> Name
+currentSheetName { sheets } =
+    ZL.current sheets |> .name
 
 
 selectSheet : Name -> Document -> Result Error Document
-selectSheet selectedName (Document data) =
-    let
-        process sheet ( before, current, after ) =
-            if sheet.name == selectedName then
-                ( before, Just sheet, after )
-
-            else
-                case current of
-                    Just _ ->
-                        ( before, current, L.append after [ sheet ] )
-
-                    Nothing ->
-                        ( L.append before [ sheet ], current, after )
-
-        ( newBefore, newCurrent, newAfter ) =
-            L.foldl process
-                (L.foldl process ( [], Nothing, [] ) data.sheetItemsBefore)
-                (data.currentSheetItem :: data.sheetItemsAfter)
-    in
-    case newCurrent of
-        Just current ->
-            Ok
-                (Document
-                    { data
-                        | currentSheetItem = current
-                        , sheetItemsBefore = newBefore
-                        , sheetItemsAfter = newAfter
-                    }
-                )
-
-        Nothing ->
-            Err (UndefinedSheetError selectedName)
+selectSheet selectedName (Document ({ sheets } as data)) =
+    ZL.select (.name >> (==) selectedName) sheets
+        |> R.fromMaybe (UndefinedSheetError selectedName)
+        |> R.map (\newSheets -> Document { data | sheets = newSheets })
 
 
 sheetExists : Name -> DocData -> Bool
-sheetExists name data =
-    L.member name (L.map .name data.sheetItemsBefore)
-        || L.member name (L.map .name data.sheetItemsAfter)
-        || (name == data.currentSheetItem.name)
+sheetExists name { sheets } =
+    ZL.member name (ZL.map .name sheets)
 
 
 insertSheet : Name -> Sheet -> Document -> Result Error Document
@@ -202,83 +183,77 @@ insertSheet name sheet (Document data) =
         Ok <|
             Document
                 { data
-                    | sheetItemsAfter = L.append data.sheetItemsAfter [ SheetItem name sheet ]
+                    | sheets = ZL.append [SheetItem name sheet] data.sheets
                 }
 
 
 removeSheet : Name -> Document -> Result Error Document
 removeSheet name (Document d) =
-    if name == d.currentSheetItem.name then
-        case ( d.sheetItemsBefore, d.sheetItemsAfter ) of
-            ( _, head :: tail ) ->
-                Ok <| Document { d | currentSheetItem = head, sheetItemsAfter = tail }
+    let
+        newSheetsRes =
+            if name == currentSheetName d then
+                ZL.removeCurrent d.sheets
+                    |> R.fromMaybe (RemovingLastSheetError name)
 
-            ( head :: tail, _ ) ->
-                Ok <| Document { d | currentSheetItem = head, sheetItemsBefore = tail }
+            else if sheetExists name d then
+                ZL.filter (.name >> (/=) name) d.sheets
+                    |> Maybe.withDefault d.sheets
+                    |> Ok
 
-            _ ->
-                Err (RemovingLastSheetError name)
-
-    else if sheetExists name d then
-        Ok <|
-            Document
-                { d
-                    | sheetItemsBefore = L.filter (.name >> (/=) name) d.sheetItemsBefore
-                    , sheetItemsAfter = L.filter (.name >> (/=) name) d.sheetItemsAfter
-                    , cells =
-                        d.cells
-                            |> D.filter (\( sheet, _ ) _ -> sheet /= name)
-                }
-
-    else
-        Err (UndefinedSheetError name)
+            else
+                Err (UndefinedSheetError name)
+    in
+    newSheetsRes
+        |> R.map
+            (\sheets ->
+                Document
+                    { d
+                        | sheets = sheets
+                        , cells = d.cells |> D.filter (\( sheet, _ ) _ -> sheet /= name)
+                    }
+            )
 
 
 renameSheet : Name -> Name -> Document -> Result Error Document
-renameSheet name newName (Document data) =
+renameSheet oldName newName (Document data) =
     let
-        updateName f item =
-            { item | name = f item.name }
+        updateName parsedName currentName =
+            if currentName == oldName then
+                parsedName
 
-        mapSheetNames f d =
+            else
+                currentName
+
+        updateSheetName : (Name -> Name) -> DocData -> DocData
+        updateSheetName rename d =
             let
-                renameCells ( sheetName, cellName ) cell renamed =
-                    D.insert ( f sheetName, cellName ) (Cell.updateReferences f cell) renamed
+                updateItemName item =
+                    { item | name = rename item.name }
+
+                updateCellRefs ( sheetName, cellName ) cell renamed =
+                    D.insert ( rename sheetName, cellName ) (Cell.updateReferences rename cell) renamed
             in
             { d
-                | currentSheetItem = updateName f d.currentSheetItem
-                , sheetItemsBefore = L.map (updateName f) d.sheetItemsBefore
-                , sheetItemsAfter = L.map (updateName f) d.sheetItemsAfter
-                , cells = D.foldr renameCells D.empty d.cells
+                | sheets = ZL.map updateItemName d.sheets
+                , cells = D.foldr updateCellRefs D.empty d.cells
             }
     in
-    if sheetExists name data then
-        if name == newName then
+    if sheetExists oldName data then
+        if oldName == newName then
             Ok (Document data)
 
         else if sheetExists newName data then
             Err (DuplicateSheetNameError newName)
 
         else
-            parseName newName
+            AST.parseName newName
                 |> R.mapError (always InvalidSheetNameError)
-                |> R.map
-                    (\parsedName ->
-                        Document <|
-                            mapSheetNames
-                                (\currentName ->
-                                    if currentName == name then
-                                        parsedName
-
-                                    else
-                                        currentName
-                                )
-                                data
-                    )
+                |> R.map (updateName >> updateSheetName)
+                |> R.map (\updater -> Document (updater data))
 
     else
         Err <|
-            UndefinedSheetError name
+            UndefinedSheetError oldName
 
 
 insert : Name -> String -> Document -> Document
@@ -290,12 +265,12 @@ insertHelp : Name -> String -> DocData -> DocData
 insertHelp cellName value d =
     case value of
         "" ->
-            { d | cells = D.remove ( d.currentSheetItem.name, cellName ) d.cells }
+            { d | cells = D.remove ( currentSheetName d, cellName ) d.cells }
 
         _ ->
             { d
                 | cells =
-                    D.insert ( d.currentSheetItem.name, cellName )
+                    D.insert ( currentSheetName d, cellName )
                         (Cell.fromSource value)
                         d.cells
             }
@@ -313,12 +288,12 @@ getCell sheetName cellName data =
 
 cellSource : Name -> Document -> Result Error String
 cellSource cellName (Document d) =
-    getCell d.currentSheetItem.name cellName d |> R.map Cell.source
+    getCell (currentSheetName d) cellName d |> R.map Cell.source
 
 
 get : Name -> Document -> ValueOrError
 get name (Document data) =
-    evalCell data [] ( data.currentSheetItem.name, name )
+    evalCell data [] ( currentSheetName data, name )
 
 
 evalCell : DocData -> List LocatedName -> LocatedName -> ValueOrError
@@ -347,7 +322,7 @@ type alias Config msg =
 
 
 view : Config msg -> Document -> Html msg
-view { toMsg } ((Document ({ currentSheetItem } as data)) as doc) =
+view { toMsg } ((Document data) as doc) =
     let
         gridConfig =
             { toMsg = GridMsg >> toMsg
@@ -369,7 +344,7 @@ view { toMsg } ((Document ({ currentSheetItem } as data)) as doc) =
             , overflow auto
             ]
         ]
-        [ case currentSheetItem.sheet of
+        [ case ZL.current data.sheets |> .sheet of
             GridSheet grid ->
                 Grid.view gridConfig grid
 

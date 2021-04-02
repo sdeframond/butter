@@ -4,7 +4,7 @@ import Browser
 import Css exposing (..)
 import Css.Global as Global
 import Document as Doc
-import Types exposing (Name, Position(..))
+import Types exposing (Name)
 import Html.Styled exposing (..)
 import Html.Styled.Attributes exposing (css, value)
 import Html.Styled.Events exposing (onClick, onDoubleClick, onInput)
@@ -223,7 +223,7 @@ sheetSelector model =
                         ]
             in
             case ( positionedName, model.edit ) of
-                ( Current _, EditingSheetName _ newName ) ->
+                ( Doc.Current _, EditingSheetName _ newName ) ->
                     li [ itemCss ]
                         [ input
                             [ value newName
@@ -232,13 +232,13 @@ sheetSelector model =
                             []
                         ]
 
-                ( Current name, _ ) ->
+                ( Doc.Current name, _ ) ->
                     defaultItem name True
 
-                ( Before name, _ ) ->
+                ( Doc.Before name, _ ) ->
                     defaultItem name False
 
-                ( After name, _ ) ->
+                ( Doc.After name, _ ) ->
                     defaultItem name False
 
         addGridSheet =

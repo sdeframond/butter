@@ -16,7 +16,6 @@ Todo
 - Feature : Re-order sheets
 - Feature : Support floating precision numbers
 
-- Refactor : Move SheetList into an abstract SelectionList module (or ZipList ?)
 - Refactor : Move sheet selection and edition into Document (maybe ?)
 
 Doing
@@ -47,6 +46,7 @@ Table ranges :
 Done
 ====
 
+- 2021-04-02 - Refactor : Move SheetList into an abstract SelectionList module (or ZipList ?)
 - 2021-03-31 - Enabler : Move Document.* back into the root folder.
 - 2021-03-23 - Refactor : Move evaluation code into AST
 - 2021-03-22 - Feature : Support for tables

@@ -3,7 +3,6 @@ module Types exposing
     , Error(..)
     , LocatedName
     , Name
-    , Position(..)
     , Value(..)
     , ValueOrError
     , valueOrErrorToString
@@ -68,9 +67,3 @@ valueOrErrorToString val =
 
         Ok v ->
             valueToString v
-
-
-type Position a
-    = Before a
-    | Current a
-    | After a
