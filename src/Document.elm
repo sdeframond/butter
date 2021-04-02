@@ -243,7 +243,7 @@ renameSheet name newName (Document data) =
         mapSheetNames f d =
             let
                 renameCells ( sheetName, cellName ) cell renamed =
-                    D.insert ( f sheetName, cellName ) (Cell.renameSheets f cell) renamed
+                    D.insert ( f sheetName, cellName ) (Cell.updateReferences f cell) renamed
             in
             { d
                 | currentSheetItem = updateName f d.currentSheetItem

@@ -9,7 +9,7 @@ module AST exposing
     , parseCell
     , parseInt
     , parseName
-    , renameSheets
+    , updateReferences
     , toString
     )
 
@@ -43,21 +43,21 @@ type Error
     = Error String (List P.DeadEnd)
 
 
-renameSheets : (String -> String) -> AST -> AST
-renameSheets f ast =
+updateReferences : (String -> String) -> AST -> AST
+updateReferences f ast =
     case ast of
         RootLiteral _ ->
             ast
 
         Formula formula ->
-            Formula (renameSheetsInFormula f formula)
+            Formula (updateReferencesInFormula f formula)
 
 
-renameSheetsInFormula : (String -> String) -> FormulaAST -> FormulaAST
-renameSheetsInFormula f ast =
+updateReferencesInFormula : (String -> String) -> FormulaAST -> FormulaAST
+updateReferencesInFormula f ast =
     case ast of
         BinOp op x y ->
-            BinOp op (renameSheetsInFormula f x) (renameSheetsInFormula f y)
+            BinOp op (updateReferencesInFormula f x) (updateReferencesInFormula f y)
 
         Literal _ ->
             ast

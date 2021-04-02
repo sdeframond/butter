@@ -1,4 +1,4 @@
-module Cell exposing (Cell, fromSource, parsed, renameSheets, source)
+module Cell exposing (Cell, fromSource, parsed, updateReferences, source)
 
 import AST exposing (AST, parseCell)
 import Types exposing (Error(..), Name)
@@ -29,11 +29,11 @@ parsed (Cell res) =
     res |> R.mapError (always ParsingError)
 
 
-renameSheets : (Name -> Name) -> Cell -> Cell
-renameSheets f ((Cell res) as c) =
+updateReferences : (Name -> Name) -> Cell -> Cell
+updateReferences f ((Cell res) as c) =
     case res of
         Err _ ->
             c
 
         Ok ast ->
-            Cell (Ok <| AST.renameSheets f ast)
+            Cell (Ok <| AST.updateReferences f ast)
