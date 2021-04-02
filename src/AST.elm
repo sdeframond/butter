@@ -4,25 +4,22 @@ module AST exposing
     , Context
     , Error(..)
     , FormulaAST(..)
-    , Memo
+    , checkCycle
     , eval
     , parseCell
     , parseInt
     , parseName
     , renameSheets
     , toString
-    , useMemoAndCheckCycle
     )
 
-import Dict as D exposing (Dict)
-import Types exposing (Error(..), LocatedName, Name, Value(..), ValueOrError)
 import List as L
-import Maybe as M
 import Parser as P exposing ((|.), (|=), Parser, end, int, lazy, map, oneOf, spaces, succeed, symbol, variable)
 import Result as R
 import Set
 import String as S
 import Tuple as T
+import Types exposing (Error(..), LocatedName, Name, Value(..), ValueOrError)
 
 
 type AST
@@ -239,57 +236,40 @@ finalize reversedOps finalExpr =
 
 
 type alias Context =
-    { resolveAbsolute : Memo -> LocatedName -> ( ValueOrError, Memo )
-    , resolveRelative : Memo -> Name -> ( ValueOrError, Memo )
+    { resolveAbsolute : LocatedName -> ValueOrError
+    , resolveRelative : Name -> ValueOrError
     }
 
 
-type alias Memo =
-    Dict LocatedName ValueOrError
+checkCycle : LocatedName -> List LocatedName -> (() -> ValueOrError) -> ValueOrError
+checkCycle path ancestors doEval =
+    if L.member path ancestors then
+        Err (CyclicReferenceError ancestors)
+
+    else
+        doEval ()
 
 
-useMemoAndCheckCycle : LocatedName -> Memo -> List LocatedName -> (() -> ( ValueOrError, Memo )) -> ( ValueOrError, Memo )
-useMemoAndCheckCycle path memo ancestors doEval =
-    let
-        memoize ( v, m ) =
-            ( v, D.insert path v m )
-
-        fromMemo =
-            D.get path memo |> M.map (\v -> ( v, memo ))
-    in
-    case fromMemo of
-        Just v ->
-            v
-
-        Nothing ->
-            memoize <|
-                if L.member path ancestors then
-                    ( Err (CyclicReferenceError ancestors), memo )
-
-                else
-                    doEval ()
-
-
-eval : Context -> Memo -> AST -> ( ValueOrError, Memo )
-eval context memo ast =
+eval : Context -> AST -> ValueOrError
+eval context ast =
     case ast of
         RootLiteral v ->
-            ( Ok v, memo )
+            Ok v
 
         Formula formulaAst ->
-            evalFormula context memo formulaAst
+            evalFormula context formulaAst
 
 
-evalFormula : Context -> Memo -> FormulaAST -> ( ValueOrError, Memo )
-evalFormula context memo formulaAst =
+evalFormula : Context -> FormulaAST -> ValueOrError
+evalFormula context formulaAst =
     let
         intBinaryOperator op errMsg x y =
             let
-                ( xRes, xMemo ) =
-                    evalFormula context memo x
+                xRes =
+                    evalFormula context x
 
-                ( yRes, yMemo ) =
-                    evalFormula context xMemo y
+                yRes =
+                    evalFormula context y
 
                 applyOp xVal yVal =
                     case ( xVal, yVal ) of
@@ -302,11 +282,11 @@ evalFormula context memo formulaAst =
                 andThen2 f a b =
                     R.map2 f a b |> R.andThen identity
             in
-            ( andThen2 applyOp xRes yRes, yMemo )
+            andThen2 applyOp xRes yRes
     in
     case formulaAst of
         Literal v ->
-            ( Ok v, memo )
+            Ok v
 
         BinOp op x y ->
             case op of
@@ -317,7 +297,7 @@ evalFormula context memo formulaAst =
                     intBinaryOperator (-) "(-) works only on IntValue" x y
 
         RelativeReference cellName ->
-            context.resolveRelative memo cellName
+            context.resolveRelative cellName
 
         AbsoluteReference sheetName cellName ->
-            context.resolveAbsolute memo ( sheetName, cellName )
+            context.resolveAbsolute ( sheetName, cellName )

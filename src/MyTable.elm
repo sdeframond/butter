@@ -6,7 +6,7 @@ module MyTable exposing
     , view
     )
 
-import AST exposing (Memo)
+import AST
 import Css exposing (..)
 import Dict as D exposing (Dict)
 import Html.Styled as H
@@ -311,7 +311,7 @@ newFieldView newField toMsg =
 
 
 type alias Resolver =
-    Memo -> LocatedName -> ( ValueOrError, Memo )
+    LocatedName -> ValueOrError
 
 
 type alias Config msg =
@@ -321,7 +321,7 @@ type alias Config msg =
 
 
 sortableTableConfig : Config msg -> TableData -> T.Config Row msg
-sortableTableConfig {toMsg, resolveAbsolute} { fields, editedCell } =
+sortableTableConfig { toMsg, resolveAbsolute } { fields, editedCell } =
     let
         toColumn field =
             T.veryCustomColumn
@@ -351,8 +351,7 @@ sortableTableConfig {toMsg, resolveAbsolute} { fields, editedCell } =
 
         fieldView : Field -> Row -> T.HtmlDetails msg
         fieldView field row =
-            evalField resolveAbsolute fields [] D.empty field row
-                |> Tuple.first
+            evalField resolveAbsolute fields [] field row
                 |> Types.valueOrErrorToString
                 |> (case field.fieldType of
                         DataField _ ->
@@ -390,24 +389,16 @@ sortableTableConfig {toMsg, resolveAbsolute} { fields, editedCell } =
         }
 
 
-evalField : Resolver -> List Field -> List LocatedName -> AST.Memo -> Field -> Row -> ( ValueOrError, AST.Memo )
-evalField resolveAbsolute fields ancestors memo field row =
+evalField : Resolver -> List Field -> List LocatedName -> Field -> Row -> ValueOrError
+evalField resolveAbsolute fields ancestors field row =
     let
-        resolveRelative : AST.Memo -> Name -> ( ValueOrError, AST.Memo )
-        resolveRelative memo_ name =
+        resolveRelative : Name -> ValueOrError
+        resolveRelative name =
             fields
                 |> L.filter (.name >> (==) name)
                 |> L.head
                 |> Result.fromMaybe (Types.UndefinedLocalReferenceError name)
-                |> Result.map (\f -> evalField resolveAbsolute fields (( "", field.name ) :: ancestors) memo_ f row)
-                |> (\result ->
-                        case result of
-                            Err e ->
-                                ( Err e, memo_ )
-
-                            Ok v ->
-                                v
-                   )
+                |> Result.andThen (\f -> evalField resolveAbsolute fields (( "", field.name ) :: ancestors) f row)
 
         context : AST.Context
         context =
@@ -431,25 +422,17 @@ evalField resolveAbsolute fields ancestors memo field row =
         evalFormulaField formula =
             AST.parseCell formula
                 |> Result.mapError (always Types.ParsingError)
-                |> Result.map (AST.eval context memo)
-                |> (\result ->
-                        case result of
-                            Err e ->
-                                ( Err e, memo )
-
-                            Ok tuple ->
-                                tuple
-                   )
+                |> Result.andThen (AST.eval context)
 
         go () =
             case field.fieldType of
                 DataField dataType ->
-                    evalDataField dataType |> (\vOrE -> ( vOrE, memo ))
+                    evalDataField dataType
 
                 FormulaField formula ->
                     evalFormulaField formula
     in
-    AST.useMemoAndCheckCycle ( "", field.name ) memo ancestors go
+    AST.checkCycle ( "", field.name ) ancestors go
 
 
 tfoot toMsg fields =

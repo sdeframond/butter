@@ -21,8 +21,6 @@ module Document exposing
     , view
     )
 
-import Css exposing (..)
-import Dict as D exposing (Dict)
 import AST
     exposing
         ( AST(..)
@@ -31,14 +29,16 @@ import AST
         , parseName
         )
 import Cell exposing (Cell)
+import Css exposing (..)
+import Dict as D exposing (Dict)
 import Grid exposing (Grid)
-import MyTable as Table exposing (Table)
-import Types exposing (..)
 import Html.Styled exposing (..)
 import Html.Styled.Attributes exposing (css)
 import List as L
+import MyTable as Table exposing (Table)
 import Result as R
 import Tuple as T
+import Types exposing (..)
 
 
 type Document
@@ -318,11 +318,11 @@ cellSource cellName (Document d) =
 
 get : Name -> Document -> ValueOrError
 get name (Document data) =
-    evalCell data [] D.empty ( data.currentSheetItem.name, name ) |> T.first
+    evalCell data [] ( data.currentSheetItem.name, name )
 
 
-evalCell : DocData -> List LocatedName -> AST.Memo -> LocatedName -> ( ValueOrError, AST.Memo )
-evalCell data ancestors memo name =
+evalCell : DocData -> List LocatedName -> LocatedName -> ValueOrError
+evalCell data ancestors name =
     let
         resolveAbsolute =
             evalCell data (name :: ancestors)
@@ -330,24 +330,16 @@ evalCell data ancestors memo name =
         context =
             { resolveAbsolute = resolveAbsolute
             , resolveRelative =
-                \newMemo relativeName ->
-                    resolveAbsolute newMemo ( T.first name, relativeName )
+                \relativeName ->
+                    resolveAbsolute ( T.first name, relativeName )
             }
 
         go () =
             getCell (T.first name) (T.second name) data
                 |> R.andThen Cell.parsed
-                |> R.map (AST.eval context memo)
-                |> (\result ->
-                        case result of
-                            Err e ->
-                                ( Err e, memo )
-
-                            Ok v ->
-                                v
-                   )
+                |> R.andThen (AST.eval context)
     in
-    AST.useMemoAndCheckCycle name memo ancestors go
+    AST.checkCycle name ancestors go
 
 
 type alias Config msg =
@@ -365,8 +357,9 @@ view { toMsg } ((Document ({ currentSheetItem } as data)) as doc) =
 
         tableConfig =
             { toMsg = TableMsg >> toMsg
-            , resolveAbsolute = \memo name ->
-                evalCell data [] memo name
+            , resolveAbsolute =
+                \name ->
+                    evalCell data [] name
             }
     in
     div
