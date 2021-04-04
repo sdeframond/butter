@@ -19,8 +19,8 @@ suite =
                 collection
 
         mockContext =
-            { resolveAbsolute = \_ -> Ok (IntValue 1337)
-            , resolveRelative = \_ -> Ok (IntValue 1338)
+            { resolveGlobalReference = \_ -> Ok (IntValue 1337)
+            , resolveLocalReference = \_ -> Ok (IntValue 1338)
             }
     in
     describe "AST"

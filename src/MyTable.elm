@@ -402,8 +402,8 @@ evalField resolveAbsolute fields ancestors field row =
 
         context : AST.Context
         context =
-            { resolveAbsolute = resolveAbsolute
-            , resolveRelative = resolveRelative
+            { resolveGlobalReference = resolveAbsolute
+            , resolveLocalReference = resolveRelative
             }
 
         evalDataField dataType =

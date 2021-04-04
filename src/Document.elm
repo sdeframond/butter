@@ -183,7 +183,7 @@ insertSheet name sheet (Document data) =
         Ok <|
             Document
                 { data
-                    | sheets = ZL.append [SheetItem name sheet] data.sheets
+                    | sheets = ZL.append [ SheetItem name sheet ] data.sheets
                 }
 
 
@@ -303,8 +303,8 @@ evalCell data ancestors name =
             evalCell data (name :: ancestors)
 
         context =
-            { resolveAbsolute = resolveAbsolute
-            , resolveRelative =
+            { resolveGlobalReference = resolveAbsolute
+            , resolveLocalReference =
                 \relativeName ->
                     resolveAbsolute ( T.first name, relativeName )
             }

@@ -28,8 +28,8 @@ type AST
 type FormulaAST
     = BinOp BinaryOp FormulaAST FormulaAST
     | Literal Value
-    | RelativeReference String
-    | AbsoluteReference String String
+    | LocalReference String
+    | GlobalReference String String
 
 
 type BinaryOp
@@ -67,11 +67,11 @@ updateReferencesInFormula f ast =
         Literal _ ->
             ast
 
-        RelativeReference _ ->
+        LocalReference _ ->
             ast
 
-        AbsoluteReference sheet cell ->
-            AbsoluteReference (f sheet) cell
+        GlobalReference sheet cell ->
+            GlobalReference (f sheet) cell
 
 
 toString : AST -> String
@@ -99,10 +99,10 @@ formulaToString ast =
         Literal (StringValue s) ->
             "\"" ++ s ++ "\""
 
-        RelativeReference ref ->
+        LocalReference ref ->
             ref
 
-        AbsoluteReference sheet ref ->
+        GlobalReference sheet ref ->
             sheet ++ "." ++ ref
 
 
@@ -173,10 +173,10 @@ reference =
 referenceHelp : String -> Parser FormulaAST
 referenceHelp str =
     oneOf
-        [ succeed (AbsoluteReference str)
+        [ succeed (GlobalReference str)
             |. symbol "."
             |= name
-        , succeed (RelativeReference str)
+        , succeed (LocalReference str)
         ]
 
 
@@ -241,8 +241,8 @@ finalize reversedOps finalExpr =
 
 
 type alias Context =
-    { resolveAbsolute : LocatedName -> ValueOrError
-    , resolveRelative : Name -> ValueOrError
+    { resolveGlobalReference : LocatedName -> ValueOrError
+    , resolveLocalReference : Name -> ValueOrError
     }
 
 
@@ -308,8 +308,8 @@ evalFormula context formulaAst =
                 MinusOp ->
                     intBinaryOperator (-) "(-) works only on IntValue" x y
 
-        RelativeReference cellName ->
-            context.resolveRelative cellName
+        LocalReference cellName ->
+            context.resolveLocalReference cellName
 
-        AbsoluteReference sheetName cellName ->
-            context.resolveAbsolute ( sheetName, cellName )
+        GlobalReference sheetName cellName ->
+            context.resolveGlobalReference ( sheetName, cellName )
