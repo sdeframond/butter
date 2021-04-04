@@ -420,9 +420,7 @@ evalField resolveAbsolute fields ancestors field row =
                    )
 
         evalFormulaField formula =
-            AST.parseCell formula
-                |> Result.mapError (always Types.ParsingError)
-                |> Result.andThen (AST.eval context)
+            AST.evalString context formula
 
         go () =
             case field.fieldType of

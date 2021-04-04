@@ -311,8 +311,7 @@ evalCell data ancestors name =
 
         go () =
             getCell (T.first name) (T.second name) data
-                |> R.andThen Cell.parsed
-                |> R.andThen (AST.eval context)
+                |> R.andThen (Cell.eval context)
     in
     AST.checkCycle name ancestors go
 

@@ -5,12 +5,10 @@ module AST exposing
     , Error(..)
     , FormulaAST(..)
     , checkCycle
-    , eval
-    , parseCell
+    , evalString
     , parseInt
     , parseName
     , updateReferences
-    , toString
     )
 
 import List as L
@@ -43,8 +41,15 @@ type Error
     = Error String (List P.DeadEnd)
 
 
-updateReferences : (String -> String) -> AST -> AST
-updateReferences f ast =
+updateReferences : (Name -> Name) -> String -> Result Error String
+updateReferences f input =
+    parseCell input
+        |> R.map (updateReferencesInAst f)
+        |> R.map toString
+
+
+updateReferencesInAst : (String -> String) -> AST -> AST
+updateReferencesInAst f ast =
     case ast of
         RootLiteral _ ->
             ast
@@ -248,6 +253,13 @@ checkCycle path ancestors doEval =
 
     else
         doEval ()
+
+
+evalString : Context -> String -> ValueOrError
+evalString context input =
+    parseCell input
+        |> R.mapError (always ParsingError)
+        |> R.andThen (eval context)
 
 
 eval : Context -> AST -> ValueOrError

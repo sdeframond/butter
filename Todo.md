@@ -1,6 +1,7 @@
 Todo
 ====
 
+- Fix : update references in MyTable when renaming a sheet
 - Enabler : Test coverage
 - Feature : Pivot tables
 - Feature : Save to file (and load file)

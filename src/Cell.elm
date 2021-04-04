@@ -1,39 +1,31 @@
-module Cell exposing (Cell, fromSource, parsed, updateReferences, source)
+module Cell exposing (Cell, eval, fromSource, source, updateReferences)
 
-import AST exposing (AST, parseCell)
-import Types exposing (Error(..), Name)
+import AST
 import Result as R
+import Types exposing (Error(..), Name)
 
 
 type Cell
-    = Cell (Result AST.Error AST)
+    = Cell String
 
 
 source : Cell -> String
-source (Cell res) =
-    case res of
-        Ok ast ->
-            AST.toString ast
-
-        Err (AST.Error src _) ->
-            src
+source (Cell str) =
+    str
 
 
 fromSource : String -> Cell
 fromSource src =
-    Cell <| parseCell src
+    Cell src
 
 
-parsed : Cell -> Result Error AST
-parsed (Cell res) =
-    res |> R.mapError (always ParsingError)
+eval : AST.Context -> Cell -> Types.ValueOrError
+eval context (Cell src) =
+    AST.evalString context src
 
 
 updateReferences : (Name -> Name) -> Cell -> Cell
-updateReferences f ((Cell res) as c) =
-    case res of
-        Err _ ->
-            c
-
-        Ok ast ->
-            Cell (Ok <| AST.updateReferences f ast)
+updateReferences f ((Cell str) as c) =
+    AST.updateReferences f str
+        |> R.map Cell
+        |> R.withDefault c
