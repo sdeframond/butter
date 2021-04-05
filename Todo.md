@@ -1,7 +1,6 @@
 Todo
 ====
 
-- Enabler : Test coverage
 - Feature : Pivot tables
 - Feature : Save to file (and load file)
 - Feature : Local storage
@@ -19,6 +18,8 @@ Todo
 - Refactor : Move sheet selection and edition into Document (maybe ?)
 - Enabler : Use IDs instead of name in references (and a M2M relationship to translate between them)
     - Benefit : one would not have to add code to support renaming references when adding a new type of sheet/field/container.
+- Enabler : Test coverage
+    - Tried on Apr. 5, does not work out of the box.
 
 Doing
 =====
