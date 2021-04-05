@@ -118,12 +118,13 @@ updateModel msg model =
             insertSheet Doc.tableSheet
 
         SelectSheet name ->
-            commitDoc
-                { model
-                    | doc =
-                        Doc.selectSheet name model.doc
-                            |> R.withDefault model.doc
-                }
+            { model
+                | doc =
+                    Doc.selectSheet name model.doc
+                        |> R.withDefault model.doc
+            }
+                |> commitDoc
+                |> commitSheetName
 
         RemoveSheet name ->
             commitDoc
