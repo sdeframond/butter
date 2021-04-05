@@ -228,8 +228,15 @@ renameSheet oldName newName (Document data) =
         updateSheetName rename d =
             let
                 updateItemName item =
-                    { item | name = rename item.name }
-
+                    { item
+                        | name = rename item.name
+                        , sheet = updateReferencesInSheet item.sheet
+                    }
+                updateReferencesInSheet sheet =
+                    case sheet of
+                        TableSheet table ->
+                            TableSheet (Table.updateReferences rename table)
+                        GridSheet _ -> sheet
                 updateCellRefs ( sheetName, cellName ) cell renamed =
                     D.insert ( rename sheetName, cellName ) (Cell.updateReferences rename cell) renamed
             in

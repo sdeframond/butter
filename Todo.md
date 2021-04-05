@@ -1,7 +1,6 @@
 Todo
 ====
 
-- Fix : update references in MyTable when renaming a sheet
 - Enabler : Test coverage
 - Feature : Pivot tables
 - Feature : Save to file (and load file)
@@ -18,6 +17,8 @@ Todo
 - Feature : Support floating precision numbers
 
 - Refactor : Move sheet selection and edition into Document (maybe ?)
+- Enabler : Use IDs instead of name in references (and a M2M relationship to translate between them)
+    - Benefit : one would not have to add code to support renaming references when adding a new type of sheet/field/container.
 
 Doing
 =====
@@ -47,6 +48,7 @@ Table ranges :
 Done
 ====
 
+- 2021-04-05 - Fix : update references in MyTable when renaming a sheet
 - 2021-04-02 - Refactor : Move SheetList into an abstract SelectionList module (or ZipList ?)
 - 2021-03-31 - Enabler : Move Document.* back into the root folder.
 - 2021-03-23 - Refactor : Move evaluation code into AST

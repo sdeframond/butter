@@ -4,12 +4,12 @@ import Browser
 import Css exposing (..)
 import Css.Global as Global
 import Document as Doc
-import Types exposing (Name)
 import Html.Styled exposing (..)
 import Html.Styled.Attributes exposing (css, value)
 import Html.Styled.Events exposing (onClick, onDoubleClick, onInput)
 import List as L
 import Result as R
+import Types exposing (Name)
 
 
 main : Program {} Model Msg

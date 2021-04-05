@@ -3,6 +3,7 @@ module MyTable exposing
     , Table
     , empty
     , update
+    , updateReferences
     , view
     )
 
@@ -241,6 +242,30 @@ updateData msg data =
 
         OnInputNewFieldFormula input ->
             setNewFieldType (FormulaField input) data
+
+
+updateReferences : (Name -> Name) -> Table -> Table
+updateReferences f (Table data) =
+    Table
+        { data
+            | fields = L.map (updateReferencesInField f) data.fields
+        }
+
+
+updateReferencesInField : (Name -> Name) -> Field -> Field
+updateReferencesInField f field =
+    case field.fieldType of
+        DataField _ ->
+            field
+
+        FormulaField formula ->
+            { field
+                | fieldType =
+                    FormulaField
+                        (AST.updateReferences f formula
+                            |> Result.withDefault formula
+                        )
+            }
 
 
 view : Config msg -> Table -> Html msg
