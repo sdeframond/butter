@@ -3,7 +3,7 @@ module Main exposing (..)
 import Browser
 import Css exposing (..)
 import Css.Global as Global
-import Document as Doc
+import Document as Doc exposing (insert)
 import Html.Styled exposing (..)
 import Html.Styled.Attributes exposing (css, value)
 import Html.Styled.Events exposing (onClick, onDoubleClick, onInput)
@@ -68,6 +68,7 @@ initModel =
 type Msg
     = InsertGridSheet
     | InsertTableSheet
+    | InsertPivotTableSheet
     | SelectSheet Name
     | RemoveSheet Name
     | EditSheet Name
@@ -116,6 +117,9 @@ updateModel msg model =
 
         InsertTableSheet ->
             insertSheet Doc.tableSheet
+
+        InsertPivotTableSheet ->
+            insertSheet Doc.pivotTableSheet
 
         SelectSheet name ->
             { model
@@ -255,6 +259,13 @@ sheetSelector model =
                 , onClick InsertTableSheet
                 ]
                 [ text "+table" ]
+
+        addSheet msg label =
+            li
+                [ itemCss
+                , onClick msg
+                ]
+                [ text label ]
     in
     ul
         [ css
@@ -263,7 +274,8 @@ sheetSelector model =
             , padding2 (px 10) (px 10)
             ]
         ]
-        (addTableSheet
-            :: addGridSheet
+        (addSheet InsertTableSheet "+table"
+            :: addSheet InsertGridSheet "+grid"
+            :: addSheet InsertPivotTableSheet "+pivot table"
             :: (Doc.sheetNames model.doc |> L.map sheetItem)
         )

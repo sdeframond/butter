@@ -21,15 +21,20 @@ import Types exposing (Error(..), LocatedName, Name, Value(..), ValueOrError)
 
 
 type AST
-    = RootLiteral Value
+    = RootLiteral Literal
     | Formula FormulaAST
 
 
 type FormulaAST
     = BinOp BinaryOp FormulaAST FormulaAST
-    | Literal Value
+    | FormulaLiteral Literal
     | LocalReference String
     | GlobalReference String String
+
+
+type Literal
+    = IntLiteral Int
+    | StringLiteral String
 
 
 type BinaryOp
@@ -64,7 +69,7 @@ updateReferencesInFormula f ast =
         BinOp op x y ->
             BinOp op (updateReferencesInFormula f x) (updateReferencesInFormula f y)
 
-        Literal _ ->
+        FormulaLiteral _ ->
             ast
 
         LocalReference _ ->
@@ -80,10 +85,10 @@ toString ast =
         Formula ast_ ->
             "=" ++ formulaToString ast_
 
-        RootLiteral (StringValue s) ->
+        RootLiteral (StringLiteral s) ->
             s
 
-        RootLiteral (IntValue i) ->
+        RootLiteral (IntLiteral i) ->
             S.fromInt i
 
 
@@ -93,10 +98,10 @@ formulaToString ast =
         BinOp op a b ->
             formulaToString a ++ binaryOpToString op ++ formulaToString b
 
-        Literal (IntValue i) ->
+        FormulaLiteral (IntLiteral i) ->
             S.fromInt i
 
-        Literal (StringValue s) ->
+        FormulaLiteral (StringLiteral s) ->
             "\"" ++ s ++ "\""
 
         LocalReference ref ->
@@ -150,7 +155,7 @@ root =
             |. spaces
             |= expression
             |. end
-        , map (RootLiteral << StringValue) var
+        , map (RootLiteral << StringLiteral) var
         ]
 
 
@@ -195,8 +200,8 @@ term =
     succeed identity
         |= oneOf
             [ reference
-            , map (Literal << IntValue) int
-            , succeed (Literal << StringValue)
+            , map (FormulaLiteral << IntLiteral) int
+            , succeed (FormulaLiteral << StringLiteral)
                 |. symbol "\""
                 |= variable { start = always True, inner = \c -> c /= '"', reserved = Set.empty }
                 |. symbol "\""
@@ -265,11 +270,21 @@ evalString context input =
 eval : Context -> AST -> ValueOrError
 eval context ast =
     case ast of
-        RootLiteral v ->
-            Ok v
+        RootLiteral lit ->
+            Ok (evalLiteral lit)
 
         Formula formulaAst ->
             evalFormula context formulaAst
+
+
+evalLiteral : Literal -> Value
+evalLiteral lit =
+    case lit of
+        StringLiteral s ->
+            StringValue s
+
+        IntLiteral i ->
+            IntValue i
 
 
 evalFormula : Context -> FormulaAST -> ValueOrError
@@ -297,8 +312,8 @@ evalFormula context formulaAst =
             andThen2 applyOp xRes yRes
     in
     case formulaAst of
-        Literal v ->
-            Ok v
+        FormulaLiteral lit ->
+            Ok (evalLiteral lit)
 
         BinOp op x y ->
             case op of

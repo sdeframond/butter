@@ -2,6 +2,7 @@ module MyTable exposing
     ( Msg
     , Table
     , empty
+    , eval
     , update
     , updateReferences
     , view
@@ -411,6 +412,20 @@ sortableTableConfig { toMsg, resolveAbsolute } { fields, editedCell } =
         , toMsg = SetTableState >> toMsg
         , columns = fields |> L.map toColumn
         , customizations = customizations
+        }
+
+
+eval : Resolver -> Table -> Types.Value
+eval resolveAbsolute (Table data) =
+    let
+        evalRow row =
+            data.fields
+                |> L.map (\f -> ( f.name, evalField resolveAbsolute data.fields [] f row ))
+                |> D.fromList
+    in
+    Types.TableValue
+        { fields = data.fields |> List.map .name
+        , rows = data.rows |> L.map evalRow
         }
 
 

@@ -8,6 +8,7 @@ module Types exposing
     , valueOrErrorToString
     , valueToString
     )
+import Dict exposing (Dict)
 
 
 type Error
@@ -33,7 +34,14 @@ type alias LocatedName =
 type Value
     = IntValue Int
     | StringValue String
+    | TableValue Table
 
+type alias Table =
+    { fields : List Name
+    , rows : List Record
+    }
+
+type alias Record = Dict Name ValueOrError
 
 type alias ValueOrError =
     Result Error Value
@@ -52,6 +60,8 @@ valueToString value =
 
         StringValue s ->
             s
+        TableValue _ ->
+            "<table>"
 
 
 valueOrErrorToString : ValueOrError -> String

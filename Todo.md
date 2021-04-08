@@ -20,6 +20,10 @@ Todo
     - Benefit : one would not have to add code to support renaming references when adding a new type of sheet/field/container.
 - Enabler : Test coverage
     - Tried on Apr. 5, does not work out of the box.
+- Debt : fork elm-pivot-table to remove dependency to elm-ui.
+- Enabler : grid cells must be configured as formula for their content to be parsed as such
+    - Benefit : remove ambiguity when content starts with "="
+- Enabler : Move all modules under "Butter" namespace to prevent conflits with dependencies (eg. Table, PivotTable...)
 
 Doing
 =====

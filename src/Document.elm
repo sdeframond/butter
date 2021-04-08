@@ -13,6 +13,7 @@ module Document exposing
        -- TODO: find a way to test without it.
 
     , insertSheet
+    , pivotTableSheet
     , removeSheet
     , renameSheet
     , selectSheet
@@ -34,6 +35,7 @@ import Dict as D exposing (Dict)
 import Grid exposing (Grid)
 import Html.Styled exposing (..)
 import Html.Styled.Attributes exposing (css)
+import MyPivotTable exposing (PivotTable)
 import MyTable as Table exposing (Table)
 import Result as R
 import Tuple as T
@@ -60,6 +62,7 @@ type alias SheetItem =
 type Sheet
     = GridSheet Grid
     | TableSheet Table
+    | PivotTableSheet PivotTable
 
 
 gridSheet : Sheet
@@ -72,9 +75,15 @@ tableSheet =
     TableSheet Table.empty
 
 
+pivotTableSheet : Sheet
+pivotTableSheet =
+    PivotTableSheet MyPivotTable.empty
+
+
 type Msg
     = GridMsg Grid.Msg
     | TableMsg Table.Msg
+    | PivotTableMsg MyPivotTable.Msg
 
 
 update : Msg -> Document -> Document
@@ -87,19 +96,21 @@ updateData msg data =
     let
         { sheet, name } =
             ZL.current data.sheets
+
+        updateSheet newSheet d =
+            { d
+                | sheets = ZL.setCurrent (SheetItem name newSheet) d.sheets
+            }
     in
     case ( msg, sheet ) of
         ( GridMsg gridMsg, GridSheet grid ) ->
             updateGrid (Grid.update gridMsg grid) data
 
         ( TableMsg tableMsg, TableSheet table ) ->
-            let
-                newCurrent =
-                    SheetItem name (TableSheet <| Table.update tableMsg table)
-            in
-            { data
-                | sheets = ZL.setCurrent newCurrent data.sheets
-            }
+            updateSheet (TableSheet <| Table.update tableMsg table) data
+
+        ( PivotTableMsg ptMsg, PivotTableSheet pt ) ->
+            updateSheet (PivotTableSheet <| MyPivotTable.update ptMsg pt) data
 
         ( _, _ ) ->
             data
@@ -232,11 +243,18 @@ renameSheet oldName newName (Document data) =
                         | name = rename item.name
                         , sheet = updateReferencesInSheet item.sheet
                     }
+
                 updateReferencesInSheet sheet =
                     case sheet of
                         TableSheet table ->
                             TableSheet (Table.updateReferences rename table)
-                        GridSheet _ -> sheet
+
+                        GridSheet _ ->
+                            sheet
+
+                        PivotTableSheet _ ->
+                            Debug.todo "rename references in pivot tables"
+
                 updateCellRefs ( sheetName, cellName ) cell renamed =
                     D.insert ( rename sheetName, cellName ) (Cell.updateReferences rename cell) renamed
             in
@@ -342,6 +360,25 @@ view { toMsg } ((Document data) as doc) =
                 \name ->
                     evalCell data [] name
             }
+
+        ptConfig =
+            { get =
+                \name ->
+                    ZL.toList data.sheets
+                        |> List.filter (.name >> (==) name)
+                        |> List.head
+                        |> R.fromMaybe (Types.UndefinedSheetError name)
+                        |> R.andThen (.sheet >> evalSheet)
+            }
+
+        evalSheet : Sheet -> ValueOrError
+        evalSheet sheet =
+            case sheet of
+                TableSheet t ->
+                    Ok (Table.eval tableConfig.resolveAbsolute t)
+
+                _ ->
+                    Err (Types.TypeError "Only table sheets can be evaluated")
     in
     div
         [ css
@@ -356,4 +393,7 @@ view { toMsg } ((Document data) as doc) =
 
             TableSheet table ->
                 Table.view tableConfig table
+
+            PivotTableSheet pt ->
+                MyPivotTable.view ptConfig pt
         ]

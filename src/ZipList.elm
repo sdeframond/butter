@@ -9,9 +9,11 @@ module ZipList exposing
     , select
     , setCurrent
     , singleton
+    , toList
     , toListWithPosition
     )
 
+import Html exposing (a)
 import List as L
 
 
@@ -43,6 +45,11 @@ type alias PositionTags a b =
     }
 
 
+toList : ZipList a -> List a
+toList (ZipList { before_, current_, after_ }) =
+    L.concat [ before_, [ current_ ], after_ ]
+
+
 toListWithPosition : PositionTags a b -> ZipList a -> List b
 toListWithPosition tag (ZipList { before_, current_, after_ }) =
     L.concat
@@ -51,8 +58,11 @@ toListWithPosition tag (ZipList { before_, current_, after_ }) =
         , L.map tag.after after_
         ]
 
-{- Move `current` to the first item the matches the given condition.
--}
+
+
+{- Move `current` to the first item the matches the given condition. -}
+
+
 select : (a -> Bool) -> ZipList a -> Maybe (ZipList a)
 select f (ZipList { before_, current_, after_ }) =
     let
