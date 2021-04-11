@@ -18,6 +18,7 @@ module Document exposing
     , renameSheet
     , selectSheet
     , sheetNames
+    , subscriptions
     , tableSheet
     , update
     , view
@@ -80,18 +81,32 @@ pivotTableSheet =
     PivotTableSheet MyPivotTable.empty
 
 
+subscriptions : Document -> Sub Msg
+subscriptions (Document data) =
+    let
+        { sheet } =
+            ZL.current data.sheets
+    in
+    case sheet of
+        PivotTableSheet pt ->
+            Sub.map PivotTableMsg (MyPivotTable.subscriptions pt)
+
+        _ ->
+            Sub.none
+
+
 type Msg
     = GridMsg Grid.Msg
     | TableMsg Table.Msg
     | PivotTableMsg MyPivotTable.Msg
 
 
-update : Msg -> Document -> Document
+update : Msg -> Document -> ( Document, Cmd Msg )
 update msg (Document data) =
-    Document (updateData msg data)
+    updateData msg data |> Tuple.mapBoth Document identity
 
 
-updateData : Msg -> DocData -> DocData
+updateData : Msg -> DocData -> ( DocData, Cmd Msg )
 updateData msg data =
     let
         { sheet, name } =
@@ -107,21 +122,30 @@ updateData msg data =
                 |> List.filter (.name >> (==) sourceName)
                 |> List.head
                 |> R.fromMaybe (Types.UndefinedSheetError sourceName)
-                |> R.andThen (.sheet >> (evalSheet data))
-
+                |> R.andThen (.sheet >> evalSheet data)
     in
     case ( msg, sheet ) of
         ( GridMsg gridMsg, GridSheet grid ) ->
-            updateGrid (Grid.update gridMsg grid) data
+            ( updateGrid (Grid.update gridMsg grid) data
+            , Cmd.none
+            )
 
         ( TableMsg tableMsg, TableSheet table ) ->
-            updateSheet (TableSheet <| Table.update tableMsg table) data
+            ( updateSheet (TableSheet <| Table.update tableMsg table) data
+            , Cmd.none
+            )
 
         ( PivotTableMsg ptMsg, PivotTableSheet pt ) ->
-            updateSheet (PivotTableSheet <| MyPivotTable.update getSource ptMsg pt) data
+            let
+                ( newPt, cmd ) =
+                    MyPivotTable.update getSource ptMsg pt
+            in
+            ( updateSheet (PivotTableSheet newPt) data
+            , Cmd.map PivotTableMsg cmd
+            )
 
         ( _, _ ) ->
-            data
+            ( data, Cmd.none )
 
 
 commitEdit : Document -> Document
@@ -348,6 +372,7 @@ evalCell data ancestors name =
     in
     AST.checkCycle name ancestors go
 
+
 evalSheet : DocData -> Sheet -> Types.ValueOrError
 evalSheet data sheet =
     case sheet of
@@ -356,6 +381,7 @@ evalSheet data sheet =
 
         _ ->
             Err (Types.TypeError "Only table sheets can be evaluated")
+
 
 type alias Config msg =
     { toMsg : Msg -> msg }

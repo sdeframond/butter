@@ -78,10 +78,10 @@ type Msg
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
-    ( updateModel msg model, Cmd.none )
+    updateModel msg model
 
 
-updateModel : Msg -> Model -> Model
+updateModel : Msg -> Model -> (Model, Cmd Msg)
 updateModel msg model =
     let
         commitDoc m =
@@ -113,36 +113,42 @@ updateModel msg model =
     in
     case Debug.log "update msg" msg of
         InsertGridSheet ->
-            insertSheet Doc.gridSheet
+            (insertSheet Doc.gridSheet, Cmd.none)
 
         InsertTableSheet ->
-            insertSheet Doc.tableSheet
+            (insertSheet Doc.tableSheet, Cmd.none)
 
         InsertPivotTableSheet ->
-            insertSheet Doc.pivotTableSheet
+            (insertSheet Doc.pivotTableSheet, Cmd.none)
 
         SelectSheet name ->
-            { model
+            ({ model
                 | doc =
                     Doc.selectSheet name model.doc
                         |> R.withDefault model.doc
             }
                 |> commitDoc
                 |> commitSheetName
+            , Cmd.none
+            )
 
         RemoveSheet name ->
-            commitDoc
+            (commitDoc
                 { model
                     | doc =
                         Doc.removeSheet name model.doc
                             |> R.withDefault model.doc
                 }
+            , Cmd.none
+            )
 
         EditSheet name ->
-            commitDoc { model | edit = EditingSheetName name name }
+            ( commitDoc { model | edit = EditingSheetName name name }
+            , Cmd.none
+            )
 
         UpdateSheetName name ->
-            { model
+            ({ model
                 | edit =
                     case model.edit of
                         EditingSheetName oldName _ ->
@@ -151,9 +157,15 @@ updateModel msg model =
                         _ ->
                             model.edit
             }
+            , Cmd.none
+            )
 
         DocMsg docMsg ->
-            commitSheetName { model | doc = Doc.update docMsg model.doc }
+            let
+                ( newDoc, cmd ) =
+                    Doc.update docMsg model.doc
+            in
+            ( commitSheetName { model | doc = newDoc }, Cmd.map DocMsg cmd )
 
 
 
@@ -163,8 +175,8 @@ updateModel msg model =
 
 
 subscriptions : Model -> Sub Msg
-subscriptions _ =
-    Sub.none
+subscriptions model =
+    Doc.subscriptions model.doc |> Sub.map DocMsg
 
 
 

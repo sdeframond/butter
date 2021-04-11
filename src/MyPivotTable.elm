@@ -1,12 +1,27 @@
-module MyPivotTable exposing (Msg, PivotTable, empty, update, view)
+module MyPivotTable exposing (Msg, PivotTable, empty, subscriptions, update, view)
 
 import Css exposing (..)
 import Dict exposing (Dict)
+import DnDList
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as Attr
 import Html.Styled.Events as Events
 import PivotTable as PT
 import Types exposing (Name, ValueOrError)
+
+
+dndConfig : DnDList.Config Field
+dndConfig =
+    { beforeUpdate = \_ _ list -> list
+    , movement = DnDList.Free
+    , listen = DnDList.OnDrag
+    , operation = DnDList.Rotate
+    }
+
+
+dndSystem : DnDList.System Field Msg
+dndSystem =
+    DnDList.create dndConfig DnDMsg
 
 
 type PivotTable
@@ -17,11 +32,13 @@ type alias State =
     { sourceName : Name
     , source : Maybe Types.Table
     , fields : List Field
+    , dnd : DnDList.Model
     }
 
 
 type Msg
     = OnInputSource String
+    | DnDMsg DnDList.Msg
 
 
 empty : PivotTable
@@ -30,6 +47,7 @@ empty =
         { sourceName = ""
         , source = Nothing
         , fields = []
+        , dnd = dndSystem.model
         }
 
 
@@ -45,7 +63,12 @@ type Group
     | UnusedGroup
 
 
-update : (Name -> ValueOrError) -> Msg -> PivotTable -> PivotTable
+subscriptions : PivotTable -> Sub Msg
+subscriptions (PivotTable state) =
+    dndSystem.subscriptions state.dnd
+
+
+update : (Name -> ValueOrError) -> Msg -> PivotTable -> ( PivotTable, Cmd Msg )
 update getSourceValue msg (PivotTable state) =
     case msg of
         OnInputSource input ->
@@ -63,7 +86,7 @@ update getSourceValue msg (PivotTable state) =
                                         Nothing
                             )
             in
-            PivotTable
+            ( PivotTable
                 { state
                     | sourceName = input
                     , source = source
@@ -72,6 +95,17 @@ update getSourceValue msg (PivotTable state) =
                             |> Maybe.map (.fields >> List.map (Field UnusedGroup))
                             |> Maybe.withDefault []
                 }
+            , Cmd.none
+            )
+
+        DnDMsg dndMsg ->
+            let
+                ( dnd, fields ) =
+                    dndSystem.update dndMsg state.dnd state.fields
+            in
+            ( PivotTable { state | fields = fields, dnd = dnd }
+            , dndSystem.commands dnd
+            )
 
 
 columnFields : State -> List Field
@@ -151,5 +185,49 @@ optionsView toMsg state =
             ]
         ]
         [ H.input [ Events.onInput (OnInputSource >> toMsg), Attr.value state.sourceName ] []
-        , H.ul [] (state.fields |> List.map (.name >> H.text >> List.singleton >> H.li []))
+        , H.ul []
+            (state.fields |> List.indexedMap (groupFieldView toMsg state.dnd))
+        , ghostField toMsg state.dnd state.fields
         ]
+
+
+groupFieldView : (Msg -> msg) -> DnDList.Model -> Int -> Field -> Html msg
+groupFieldView toMsg dnd index field =
+    let
+        fieldId : String
+        fieldId =
+            "id-" ++ field.name
+
+        dndEvents events =
+            events index fieldId |> List.map (Attr.fromUnstyled >> Attr.map toMsg)
+    in
+    case dndSystem.info dnd of
+        Just { dragIndex } ->
+            if dragIndex /= index then
+                H.li
+                    (Attr.id fieldId :: dndEvents dndSystem.dropEvents)
+                    [ field.name |> H.text ]
+
+            else
+                H.li [ Attr.id fieldId ] [ H.text "[-----]" ]
+
+        Nothing ->
+            H.li
+                (Attr.id fieldId :: dndEvents dndSystem.dragEvents)
+                [ field.name |> H.text ]
+
+
+ghostField : (Msg -> msg) -> DnDList.Model -> List Field -> Html msg
+ghostField toMsg dnd fields =
+    let
+        maybeDragItem =
+            dndSystem.info dnd |> Maybe.andThen (\{ dragIndex } -> fields |> List.drop dragIndex |> List.head)
+    in
+    case maybeDragItem of
+        Nothing ->
+            H.text ""
+
+        Just field ->
+            H.li
+                (dndSystem.ghostStyles dnd |> List.map (Attr.fromUnstyled >> Attr.map toMsg))
+                [ field.name |> H.text ]
