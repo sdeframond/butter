@@ -1,7 +1,6 @@
 Todo
 ====
 
-- Feature : Pivot tables
 - Feature : Save to file (and load file)
 - Feature : Local storage
 - Feature : Functions (which ones ?)
@@ -28,8 +27,12 @@ Todo
 Doing
 =====
 
+- Feature : Pivot tables
+    - QUESTION : what do to when adding/removing/renaming fields in the source table ?
+        - renaming : automatically use the new name in the pivot table
+        - adding : just add it to the Unused field group
+        - removing : remove it from the lists even if it was used ?
 - 2021-03-28 - Feature : Formulas in tables
-    TODO : tests
 
 Notes
 -----

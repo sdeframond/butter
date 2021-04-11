@@ -246,20 +246,6 @@ sheetSelector model =
                 ( Doc.After name, _ ) ->
                     defaultItem name False
 
-        addGridSheet =
-            li
-                [ itemCss
-                , onClick InsertGridSheet
-                ]
-                [ text "+grid" ]
-
-        addTableSheet =
-            li
-                [ itemCss
-                , onClick InsertTableSheet
-                ]
-                [ text "+table" ]
-
         addSheet msg label =
             li
                 [ itemCss

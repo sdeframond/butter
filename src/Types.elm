@@ -3,11 +3,13 @@ module Types exposing
     , Error(..)
     , LocatedName
     , Name
+    , Table
     , Value(..)
     , ValueOrError
     , valueOrErrorToString
     , valueToString
     )
+
 import Dict exposing (Dict)
 
 
@@ -36,12 +38,16 @@ type Value
     | StringValue String
     | TableValue Table
 
+
 type alias Table =
     { fields : List Name
     , rows : List Record
     }
 
-type alias Record = Dict Name ValueOrError
+
+type alias Record =
+    Dict Name ValueOrError
+
 
 type alias ValueOrError =
     Result Error Value
@@ -60,6 +66,7 @@ valueToString value =
 
         StringValue s ->
             s
+
         TableValue _ ->
             "<table>"
 

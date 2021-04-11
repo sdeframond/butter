@@ -3,7 +3,8 @@ module MyPivotTable exposing (Msg, PivotTable, empty, update, view)
 import Css exposing (..)
 import Dict exposing (Dict)
 import Html.Styled as H exposing (Html)
-import Html.Styled.Attributes exposing (css)
+import Html.Styled.Attributes as Attr
+import Html.Styled.Events as Events
 import PivotTable as PT
 import Types exposing (Name, ValueOrError)
 
@@ -13,70 +14,98 @@ type PivotTable
 
 
 type alias State =
-    { source : Name
-    , columns : List Name
-    , rows : List Name
-    , values : List Name
+    { sourceName : Name
+    , source : Maybe Types.Table
+    , fields : List Field
     }
 
 
-type alias Row =
-    Dict Name ValueOrError
-
-
 type Msg
-    = NoOp
+    = OnInputSource String
 
 
 empty : PivotTable
 empty =
     PivotTable
-        { source = "Sheet1"
-        , columns = ["a", "b"]
-        , rows = ["c", "d"]
-        , values = []
+        { sourceName = ""
+        , source = Nothing
+        , fields = []
         }
 
 
-update : Msg -> PivotTable -> PivotTable
-update msg pt =
-    Debug.todo "PivotTable.update"
+type alias Field =
+    { group : Group
+    , name : Name
+    }
 
 
-type alias Config =
-    { get : Name -> ValueOrError }
+type Group
+    = ColumnsGroup
+    | RowsGroup
+    | UnusedGroup
 
 
-view : Config -> PivotTable -> Html msg
-view config (PivotTable state) =
+update : (Name -> ValueOrError) -> Msg -> PivotTable -> PivotTable
+update getSourceValue msg (PivotTable state) =
+    case msg of
+        OnInputSource input ->
+            let
+                source =
+                    getSourceValue input
+                        |> Result.toMaybe
+                        |> Maybe.andThen
+                            (\v ->
+                                case v of
+                                    Types.TableValue t ->
+                                        Just t
+
+                                    _ ->
+                                        Nothing
+                            )
+            in
+            PivotTable
+                { state
+                    | sourceName = input
+                    , source = source
+                    , fields =
+                        source
+                            |> Maybe.map (.fields >> List.map (Field UnusedGroup))
+                            |> Maybe.withDefault []
+                }
+
+
+columnFields : State -> List Field
+columnFields state =
+    state.fields |> List.filter (.group >> (==) ColumnsGroup)
+
+
+rowFields : State -> List Field
+rowFields state =
+    state.fields |> List.filter (.group >> (==) RowsGroup)
+
+
+unusedFields : State -> List Field
+unusedFields state =
+    state.fields |> List.filter (.group >> (==) UnusedGroup)
+
+
+view : (Msg -> msg) -> PivotTable -> Html msg
+view toMsg (PivotTable state) =
     H.div
-        [ css
+        [ Attr.css
             [ displayFlex
             , flexDirection Css.row
             , height (pct 100)
             ]
         ]
-        [ tableView config state
-        , optionsView
+        [ tableView state
+        , optionsView toMsg state
         ]
 
 
-tableView : Config -> State -> Html msg
-tableView config state =
+tableView : State -> Html msg
+tableView state =
     let
-        tableResult : Result Types.Error (PT.Table Row)
-        tableResult =
-            config.get state.source
-                |> Result.andThen
-                    (\v ->
-                        case v of
-                            Types.TableValue t ->
-                                Ok (PT.makeTable t.rows)
-
-                            _ ->
-                                Err (Types.TypeError "Expecting a Table value")
-                    )
-
         groupFields fieldNames =
             fieldNames
                 |> List.map Dict.get
@@ -86,8 +115,8 @@ tableView config state =
                     )
 
         ptConfig =
-            { rowGroupFields = groupFields state.rows
-            , colGroupFields = groupFields state.columns
+            { rowGroupFields = groupFields (rowFields state |> List.map .name)
+            , colGroupFields = groupFields (columnFields state |> List.map .name)
             , aggregator = List.length
             , viewRow = H.text >> H.toUnstyled
             , viewCol = H.text >> H.toUnstyled
@@ -95,24 +124,24 @@ tableView config state =
             }
     in
     H.div
-        [ css
+        [ Attr.css
             [ flex2 (int 1) (int 1)
             , overflow auto
             ]
         ]
-        [ case tableResult of
-            Ok table ->
-                PT.pivotTableHtml ptConfig table |> H.fromUnstyled
+        [ case state.source of
+            Just table ->
+                PT.pivotTableHtml ptConfig (PT.makeTable table.rows) |> H.fromUnstyled
 
-            Err e ->
-                H.text (Debug.toString e)
+            Nothing ->
+                H.text "Please select a table"
         ]
 
 
-optionsView : Html msg
-optionsView =
+optionsView : (Msg -> msg) -> State -> Html msg
+optionsView toMsg state =
     H.div
-        [ css
+        [ Attr.css
             [ flex3 (int 0) (int 0) (px 100)
             , border3 (px 1) solid (rgb 0 0 0)
             , height (pct 100)
@@ -121,4 +150,6 @@ optionsView =
             , flexDirection column
             ]
         ]
-        [ H.text "TODO" ]
+        [ H.input [ Events.onInput (OnInputSource >> toMsg), Attr.value state.sourceName ] []
+        , H.ul [] (state.fields |> List.map (.name >> H.text >> List.singleton >> H.li []))
+        ]

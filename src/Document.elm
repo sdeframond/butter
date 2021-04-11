@@ -39,7 +39,7 @@ import MyPivotTable exposing (PivotTable)
 import MyTable as Table exposing (Table)
 import Result as R
 import Tuple as T
-import Types exposing (..)
+import Types
 import ZipList as ZL exposing (ZipList)
 
 
@@ -48,7 +48,7 @@ type Document
 
 
 type alias DocData =
-    { cells : Dict LocatedName Cell
+    { cells : Dict Types.LocatedName Cell
     , sheets : ZipList SheetItem
     }
 
@@ -101,6 +101,14 @@ updateData msg data =
             { d
                 | sheets = ZL.setCurrent (SheetItem name newSheet) d.sheets
             }
+
+        getSource sourceName =
+            ZL.toList data.sheets
+                |> List.filter (.name >> (==) sourceName)
+                |> List.head
+                |> R.fromMaybe (Types.UndefinedSheetError sourceName)
+                |> R.andThen (.sheet >> (evalSheet data))
+
     in
     case ( msg, sheet ) of
         ( GridMsg gridMsg, GridSheet grid ) ->
@@ -110,7 +118,7 @@ updateData msg data =
             updateSheet (TableSheet <| Table.update tableMsg table) data
 
         ( PivotTableMsg ptMsg, PivotTableSheet pt ) ->
-            updateSheet (PivotTableSheet <| MyPivotTable.update ptMsg pt) data
+            updateSheet (PivotTableSheet <| MyPivotTable.update getSource ptMsg pt) data
 
         ( _, _ ) ->
             data
@@ -144,7 +152,7 @@ updateGrid ( newGrid, gridCmd ) data =
             insertHelp cellName content newData
 
 
-init : Name -> Sheet -> Document
+init : Types.Name -> Sheet -> Document
 init name sheet =
     Document
         { cells = D.empty
@@ -158,7 +166,7 @@ type Position a
     | After a
 
 
-sheetNames : Document -> List (Position Name)
+sheetNames : Document -> List (Position Types.Name)
 sheetNames (Document { sheets }) =
     ZL.map .name sheets
         |> ZL.toListWithPosition
@@ -168,27 +176,27 @@ sheetNames (Document { sheets }) =
             }
 
 
-currentSheetName : DocData -> Name
+currentSheetName : DocData -> Types.Name
 currentSheetName { sheets } =
     ZL.current sheets |> .name
 
 
-selectSheet : Name -> Document -> Result Error Document
+selectSheet : Types.Name -> Document -> Result Types.Error Document
 selectSheet selectedName (Document ({ sheets } as data)) =
     ZL.select (.name >> (==) selectedName) sheets
-        |> R.fromMaybe (UndefinedSheetError selectedName)
+        |> R.fromMaybe (Types.UndefinedSheetError selectedName)
         |> R.map (\newSheets -> Document { data | sheets = newSheets })
 
 
-sheetExists : Name -> DocData -> Bool
+sheetExists : Types.Name -> DocData -> Bool
 sheetExists name { sheets } =
     ZL.member name (ZL.map .name sheets)
 
 
-insertSheet : Name -> Sheet -> Document -> Result Error Document
+insertSheet : Types.Name -> Sheet -> Document -> Result Types.Error Document
 insertSheet name sheet (Document data) =
     if sheetExists name data then
-        Err (DuplicateSheetNameError name)
+        Err (Types.DuplicateSheetNameError name)
 
     else
         Ok <|
@@ -198,13 +206,13 @@ insertSheet name sheet (Document data) =
                 }
 
 
-removeSheet : Name -> Document -> Result Error Document
+removeSheet : Types.Name -> Document -> Result Types.Error Document
 removeSheet name (Document d) =
     let
         newSheetsRes =
             if name == currentSheetName d then
                 ZL.removeCurrent d.sheets
-                    |> R.fromMaybe (RemovingLastSheetError name)
+                    |> R.fromMaybe (Types.RemovingLastSheetError name)
 
             else if sheetExists name d then
                 ZL.filter (.name >> (/=) name) d.sheets
@@ -212,7 +220,7 @@ removeSheet name (Document d) =
                     |> Ok
 
             else
-                Err (UndefinedSheetError name)
+                Err (Types.UndefinedSheetError name)
     in
     newSheetsRes
         |> R.map
@@ -225,7 +233,7 @@ removeSheet name (Document d) =
             )
 
 
-renameSheet : Name -> Name -> Document -> Result Error Document
+renameSheet : Types.Name -> Types.Name -> Document -> Result Types.Error Document
 renameSheet oldName newName (Document data) =
     let
         updateName parsedName currentName =
@@ -235,7 +243,7 @@ renameSheet oldName newName (Document data) =
             else
                 currentName
 
-        updateSheetName : (Name -> Name) -> DocData -> DocData
+        updateSheetName : (Types.Name -> Types.Name) -> DocData -> DocData
         updateSheetName rename d =
             let
                 updateItemName item =
@@ -268,25 +276,25 @@ renameSheet oldName newName (Document data) =
             Ok (Document data)
 
         else if sheetExists newName data then
-            Err (DuplicateSheetNameError newName)
+            Err (Types.DuplicateSheetNameError newName)
 
         else
             AST.parseName newName
-                |> R.mapError (always InvalidSheetNameError)
+                |> R.mapError (always Types.InvalidSheetNameError)
                 |> R.map (updateName >> updateSheetName)
                 |> R.map (\updater -> Document (updater data))
 
     else
         Err <|
-            UndefinedSheetError oldName
+            Types.UndefinedSheetError oldName
 
 
-insert : Name -> String -> Document -> Document
+insert : Types.Name -> String -> Document -> Document
 insert cellName value (Document data) =
     Document <| insertHelp cellName value data
 
 
-insertHelp : Name -> String -> DocData -> DocData
+insertHelp : Types.Name -> String -> DocData -> DocData
 insertHelp cellName value d =
     case value of
         "" ->
@@ -301,27 +309,27 @@ insertHelp cellName value d =
             }
 
 
-getCell : Name -> Name -> DocData -> Result Error Cell
+getCell : Types.Name -> Types.Name -> DocData -> Result Types.Error Cell
 getCell sheetName cellName data =
     if sheetExists sheetName data then
         D.get ( sheetName, cellName ) data.cells
-            |> R.fromMaybe (UndefinedGlobalReferenceError ( sheetName, cellName ))
+            |> R.fromMaybe (Types.UndefinedGlobalReferenceError ( sheetName, cellName ))
 
     else
-        Err <| UndefinedSheetError sheetName
+        Err <| Types.UndefinedSheetError sheetName
 
 
-cellSource : Name -> Document -> Result Error String
+cellSource : Types.Name -> Document -> Result Types.Error String
 cellSource cellName (Document d) =
     getCell (currentSheetName d) cellName d |> R.map Cell.source
 
 
-get : Name -> Document -> ValueOrError
+get : Types.Name -> Document -> Types.ValueOrError
 get name (Document data) =
     evalCell data [] ( currentSheetName data, name )
 
 
-evalCell : DocData -> List LocatedName -> LocatedName -> ValueOrError
+evalCell : DocData -> List Types.LocatedName -> Types.LocatedName -> Types.ValueOrError
 evalCell data ancestors name =
     let
         resolveAbsolute =
@@ -340,6 +348,14 @@ evalCell data ancestors name =
     in
     AST.checkCycle name ancestors go
 
+evalSheet : DocData -> Sheet -> Types.ValueOrError
+evalSheet data sheet =
+    case sheet of
+        TableSheet t ->
+            Ok (Table.eval (evalCell data []) t)
+
+        _ ->
+            Err (Types.TypeError "Only table sheets can be evaluated")
 
 type alias Config msg =
     { toMsg : Msg -> msg }
@@ -360,25 +376,6 @@ view { toMsg } ((Document data) as doc) =
                 \name ->
                     evalCell data [] name
             }
-
-        ptConfig =
-            { get =
-                \name ->
-                    ZL.toList data.sheets
-                        |> List.filter (.name >> (==) name)
-                        |> List.head
-                        |> R.fromMaybe (Types.UndefinedSheetError name)
-                        |> R.andThen (.sheet >> evalSheet)
-            }
-
-        evalSheet : Sheet -> ValueOrError
-        evalSheet sheet =
-            case sheet of
-                TableSheet t ->
-                    Ok (Table.eval tableConfig.resolveAbsolute t)
-
-                _ ->
-                    Err (Types.TypeError "Only table sheets can be evaluated")
     in
     div
         [ css
@@ -395,5 +392,5 @@ view { toMsg } ((Document data) as doc) =
                 Table.view tableConfig table
 
             PivotTableSheet pt ->
-                MyPivotTable.view ptConfig pt
+                MyPivotTable.view (PivotTableMsg >> toMsg) pt
         ]
