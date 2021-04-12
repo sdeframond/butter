@@ -2,7 +2,7 @@ module MyPivotTable exposing (Msg, PivotTable, empty, subscriptions, update, vie
 
 import Css exposing (..)
 import Dict exposing (Dict)
-import DnDList
+import DnDList.Groups as DnDList
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as Attr
 import Html.Styled.Events as Events
@@ -10,16 +10,21 @@ import PivotTable as PT
 import Types exposing (Name, ValueOrError)
 
 
-dndConfig : DnDList.Config Field
+dndConfig : DnDList.Config Draggable
 dndConfig =
     { beforeUpdate = \_ _ list -> list
-    , movement = DnDList.Free
     , listen = DnDList.OnDrag
     , operation = DnDList.Rotate
+    , groups =
+        { listen = DnDList.OnDrag
+        , operation = DnDList.InsertBefore
+        , comparator = \f1 f2 -> f1.group == f2.group
+        , setter = \f1 f2 -> { f2 | group = f1.group }
+        }
     }
 
 
-dndSystem : DnDList.System Field Msg
+dndSystem : DnDList.System Draggable Msg
 dndSystem =
     DnDList.create dndConfig DnDMsg
 
@@ -31,7 +36,7 @@ type PivotTable
 type alias State =
     { sourceName : Name
     , source : Maybe Types.Table
-    , fields : List Field
+    , fields : List Draggable
     , dnd : DnDList.Model
     }
 
@@ -51,9 +56,9 @@ empty =
         }
 
 
-type alias Field =
+type alias Draggable =
     { group : Group
-    , name : Name
+    , maybeName : Maybe Name -- No name for placeholders
     }
 
 
@@ -91,9 +96,14 @@ update getSourceValue msg (PivotTable state) =
                     | sourceName = input
                     , source = source
                     , fields =
-                        source
-                            |> Maybe.map (.fields >> List.map (Field UnusedGroup))
+                        (source
+                            |> Maybe.map (.fields >> List.map (Just >> Draggable UnusedGroup))
                             |> Maybe.withDefault []
+                        )
+                            ++ [ Draggable UnusedGroup Nothing
+                               , Draggable ColumnsGroup Nothing
+                               , Draggable RowsGroup Nothing
+                               ]
                 }
             , Cmd.none
             )
@@ -106,21 +116,6 @@ update getSourceValue msg (PivotTable state) =
             ( PivotTable { state | fields = fields, dnd = dnd }
             , dndSystem.commands dnd
             )
-
-
-columnFields : State -> List Field
-columnFields state =
-    state.fields |> List.filter (.group >> (==) ColumnsGroup)
-
-
-rowFields : State -> List Field
-rowFields state =
-    state.fields |> List.filter (.group >> (==) RowsGroup)
-
-
-unusedFields : State -> List Field
-unusedFields state =
-    state.fields |> List.filter (.group >> (==) UnusedGroup)
 
 
 view : (Msg -> msg) -> PivotTable -> Html msg
@@ -140,8 +135,10 @@ view toMsg (PivotTable state) =
 tableView : State -> Html msg
 tableView state =
     let
-        groupFields fieldNames =
-            fieldNames
+        groupFields group =
+            state.fields
+                |> List.filter (.group >> (==) group)
+                |> List.filterMap .maybeName
                 |> List.map Dict.get
                 |> List.map
                     (\f ->
@@ -149,8 +146,8 @@ tableView state =
                     )
 
         ptConfig =
-            { rowGroupFields = groupFields (rowFields state |> List.map .name)
-            , colGroupFields = groupFields (columnFields state |> List.map .name)
+            { rowGroupFields = groupFields RowsGroup
+            , colGroupFields = groupFields ColumnsGroup
             , aggregator = List.length
             , viewRow = H.text >> H.toUnstyled
             , viewCol = H.text >> H.toUnstyled
@@ -174,6 +171,14 @@ tableView state =
 
 optionsView : (Msg -> msg) -> State -> Html msg
 optionsView toMsg state =
+    let
+        indexedFields =
+            state.fields |> List.indexedMap Tuple.pair
+
+        maybeDragItem =
+            dndSystem.info state.dnd
+                |> Maybe.andThen (\{ dragIndex } -> state.fields |> List.drop dragIndex |> List.head)
+    in
     H.div
         [ Attr.css
             [ flex3 (int 0) (int 0) (px 100)
@@ -185,49 +190,79 @@ optionsView toMsg state =
             ]
         ]
         [ H.input [ Events.onInput (OnInputSource >> toMsg), Attr.value state.sourceName ] []
-        , H.ul []
-            (state.fields |> List.indexedMap (groupFieldView toMsg state.dnd))
-        , ghostField toMsg state.dnd state.fields
+        , groupFieldView toMsg state.dnd maybeDragItem "Fields" UnusedGroup indexedFields
+        , groupFieldView toMsg state.dnd maybeDragItem "Columns" ColumnsGroup indexedFields
+        , groupFieldView toMsg state.dnd maybeDragItem "Rows" RowsGroup indexedFields
+        , ghostField toMsg state.dnd maybeDragItem
         ]
 
 
-groupFieldView : (Msg -> msg) -> DnDList.Model -> Int -> Field -> Html msg
-groupFieldView toMsg dnd index field =
+groupFieldView : (Msg -> msg) -> DnDList.Model -> Maybe Draggable -> String -> Group -> List ( Int, Draggable ) -> Html msg
+groupFieldView toMsg dnd maybeDragItem label currentGroup indexedFields =
     let
-        fieldId : String
-        fieldId =
-            "id-" ++ field.name
+        fieldView ( index, field ) =
+            let
+                fieldId : String
+                fieldId =
+                    "id-" ++ String.fromInt index
 
-        dndEvents events =
-            events index fieldId |> List.map (Attr.fromUnstyled >> Attr.map toMsg)
+                dndEvents events =
+                    events dndSystem index fieldId |> List.map (Attr.fromUnstyled >> Attr.map toMsg)
+            in
+            case ( field.maybeName, dndSystem.info dnd ) of
+                ( Just name, Just { dragIndex } ) ->
+                    if dragIndex /= index then
+                        H.li
+                            (Attr.id fieldId :: dndEvents .dropEvents)
+                            [ H.text name ]
+
+                    else
+                        H.li [ Attr.id fieldId ] [ H.text "[-----]" ]
+
+                ( Just name, Nothing ) ->
+                    H.li
+                        (Attr.id fieldId :: dndEvents .dragEvents)
+                        [ H.text name ]
+
+                ( Nothing, Just _ ) ->
+                    H.li
+                        (Attr.id fieldId
+                            :: (case Maybe.map .group maybeDragItem of
+                                    Just dragItemGroup ->
+                                        if currentGroup /= dragItemGroup then
+                                            dndEvents .dropEvents
+
+                                        else
+                                            []
+
+                                    Nothing ->
+                                        []
+                               )
+                        )
+                        [ H.text "" ]
+
+                ( Nothing, Nothing ) ->
+                    H.li
+                        [ Attr.id fieldId ]
+                        [ H.text "" ]
+
+        filteredFields =
+            indexedFields
+                |> List.filter (Tuple.second >> .group >> (==) currentGroup)
     in
-    case dndSystem.info dnd of
-        Just { dragIndex } ->
-            if dragIndex /= index then
-                H.li
-                    (Attr.id fieldId :: dndEvents dndSystem.dropEvents)
-                    [ field.name |> H.text ]
-
-            else
-                H.li [ Attr.id fieldId ] [ H.text "[-----]" ]
-
-        Nothing ->
-            H.li
-                (Attr.id fieldId :: dndEvents dndSystem.dragEvents)
-                [ field.name |> H.text ]
+    H.div []
+        [ H.h1 [] [ H.text label ]
+        , H.ul [] (filteredFields |> List.map fieldView)
+        ]
 
 
-ghostField : (Msg -> msg) -> DnDList.Model -> List Field -> Html msg
-ghostField toMsg dnd fields =
-    let
-        maybeDragItem =
-            dndSystem.info dnd |> Maybe.andThen (\{ dragIndex } -> fields |> List.drop dragIndex |> List.head)
-    in
-    case maybeDragItem of
+ghostField : (Msg -> msg) -> DnDList.Model -> Maybe Draggable -> Html msg
+ghostField toMsg dnd maybeDragItem =
+    case maybeDragItem |> Maybe.andThen .maybeName of
         Nothing ->
             H.text ""
 
-        Just field ->
+        Just name ->
             H.li
                 (dndSystem.ghostStyles dnd |> List.map (Attr.fromUnstyled >> Attr.map toMsg))
-                [ field.name |> H.text ]
+                [ H.text name ]
