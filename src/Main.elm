@@ -3,7 +3,7 @@ module Main exposing (..)
 import Browser
 import Css exposing (..)
 import Css.Global as Global
-import Document as Doc exposing (insert)
+import Document as Doc
 import Html.Styled exposing (..)
 import Html.Styled.Attributes exposing (css, value)
 import Html.Styled.Events exposing (onClick, onDoubleClick, onInput)
@@ -37,7 +37,7 @@ type alias Model =
 
 type EditStatus
     = NotEditing
-    | EditingSheetName Name Name
+    | EditingSheetName Types.SheetId Name
 
 
 
@@ -53,7 +53,7 @@ init _ =
 
 initModel : Model
 initModel =
-    { doc = Doc.init "Sheet1" Doc.tableSheet
+    { doc = Doc.init (Doc.tableSheet "Sheet1")
     , sheetCounter = 2
     , edit = NotEditing
     }
@@ -69,9 +69,9 @@ type Msg
     = InsertGridSheet
     | InsertTableSheet
     | InsertPivotTableSheet
-    | SelectSheet Name
-    | RemoveSheet Name
-    | EditSheet Name
+    | SelectSheet Types.SheetId
+    | RemoveSheet Types.SheetId
+    | EditSheet ( Types.SheetId, Doc.Sheet )
     | UpdateSheetName Name
     | DocMsg Doc.Msg
 
@@ -81,7 +81,7 @@ update msg model =
     updateModel msg model
 
 
-updateModel : Msg -> Model -> (Model, Cmd Msg)
+updateModel : Msg -> Model -> ( Model, Cmd Msg )
 updateModel msg model =
     let
         commitDoc m =
@@ -89,66 +89,66 @@ updateModel msg model =
 
         commitSheetName m =
             case m.edit of
-                EditingSheetName oldName newName ->
+                EditingSheetName sheetId newName ->
                     { m
                         | edit = NotEditing
                         , doc =
-                            Doc.renameSheet oldName newName m.doc
+                            Doc.renameSheet sheetId newName m.doc
+                                -- TODO log errors
                                 |> R.withDefault m.doc
                     }
 
                 NotEditing ->
                     m
 
-        insertSheet sheet =
+        insertSheet makeSheet =
             { model
                 | doc =
                     R.withDefault model.doc <|
                         Doc.insertSheet
-                            ("Sheet" ++ String.fromInt model.sheetCounter)
-                            sheet
+                            (makeSheet <| "Sheet" ++ String.fromInt model.sheetCounter)
                             model.doc
                 , sheetCounter = model.sheetCounter + 1
             }
     in
     case Debug.log "update msg" msg of
         InsertGridSheet ->
-            (insertSheet Doc.gridSheet, Cmd.none)
+            ( insertSheet Doc.gridSheet, Cmd.none )
 
         InsertTableSheet ->
-            (insertSheet Doc.tableSheet, Cmd.none)
+            ( insertSheet Doc.tableSheet, Cmd.none )
 
         InsertPivotTableSheet ->
-            (insertSheet Doc.pivotTableSheet, Cmd.none)
+            ( insertSheet Doc.pivotTableSheet, Cmd.none )
 
-        SelectSheet name ->
-            ({ model
+        SelectSheet sheetId ->
+            ( { model
                 | doc =
-                    Doc.selectSheet name model.doc
+                    Doc.selectSheet sheetId model.doc
                         |> R.withDefault model.doc
-            }
+              }
                 |> commitDoc
                 |> commitSheetName
             , Cmd.none
             )
 
-        RemoveSheet name ->
-            (commitDoc
+        RemoveSheet sheetId ->
+            ( commitDoc
                 { model
                     | doc =
-                        Doc.removeSheet name model.doc
+                        Doc.removeSheet sheetId model.doc
                             |> R.withDefault model.doc
                 }
             , Cmd.none
             )
 
-        EditSheet name ->
-            ( commitDoc { model | edit = EditingSheetName name name }
+        EditSheet ( sheetId, sheet ) ->
+            ( commitDoc { model | edit = EditingSheetName sheetId (Doc.sheetName sheet) }
             , Cmd.none
             )
 
         UpdateSheetName name ->
-            ({ model
+            ( { model
                 | edit =
                     case model.edit of
                         EditingSheetName oldName _ ->
@@ -156,7 +156,7 @@ updateModel msg model =
 
                         _ ->
                             model.edit
-            }
+              }
             , Cmd.none
             )
 
@@ -221,7 +221,7 @@ sheetSelector model =
 
         sheetItem positionedName =
             let
-                defaultItem name isCurrent =
+                defaultItem ( sheetId, sheet ) isCurrent =
                     li
                         [ itemCss
                         , css
@@ -231,11 +231,11 @@ sheetSelector model =
                               else
                                 fontWeight normal
                             ]
-                        , onClick <| SelectSheet name
-                        , onDoubleClick <| EditSheet name
+                        , onClick <| SelectSheet sheetId
+                        , onDoubleClick <| EditSheet ( sheetId, sheet )
                         ]
-                        [ text name
-                        , span [ onClick <| RemoveSheet name ]
+                        [ text (Doc.sheetName sheet)
+                        , span [ onClick <| RemoveSheet sheetId ]
                             [ text "[x]" ]
                         ]
             in
@@ -249,14 +249,14 @@ sheetSelector model =
                             []
                         ]
 
-                ( Doc.Current name, _ ) ->
-                    defaultItem name True
+                ( Doc.Current sheetWithId, _ ) ->
+                    defaultItem sheetWithId True
 
-                ( Doc.Before name, _ ) ->
-                    defaultItem name False
+                ( Doc.Before sheetWithId, _ ) ->
+                    defaultItem sheetWithId False
 
-                ( Doc.After name, _ ) ->
-                    defaultItem name False
+                ( Doc.After sheetWithId, _ ) ->
+                    defaultItem sheetWithId False
 
         addSheet msg label =
             li
@@ -275,5 +275,5 @@ sheetSelector model =
         (addSheet InsertTableSheet "+table"
             :: addSheet InsertGridSheet "+grid"
             :: addSheet InsertPivotTableSheet "+pivot table"
-            :: (Doc.sheetNames model.doc |> L.map sheetItem)
+            :: (Doc.sheetsWithIds model.doc |> L.map sheetItem)
         )

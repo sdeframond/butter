@@ -4,11 +4,11 @@ module MyTable exposing
     , empty
     , eval
     , update
-    , updateReferences
     , view
     )
 
 import AST
+import Cell exposing (Cell)
 import Css exposing (..)
 import Dict as D exposing (Dict)
 import Html.Styled as H
@@ -26,7 +26,7 @@ import Json.Decode as Decode
 import List as L
 import Maybe as M
 import Table as T exposing (defaultCustomizations)
-import Types exposing (DataType(..), Error(..), LocatedName, Name, ValueOrError)
+import Types exposing (DataType(..), Error(..), Name, ValueOrError)
 
 
 type Table
@@ -52,7 +52,7 @@ type alias Field =
 
 type FieldType
     = DataField DataType
-    | FormulaField String
+    | FormulaField Cell
 
 
 emptyField : Field
@@ -68,8 +68,8 @@ isValidField { name, fieldType } =
                 DataField _ ->
                     True
 
-                FormulaField formula ->
-                    formula /= ""
+                FormulaField cell ->
+                    Cell.isValid cell
            )
 
 
@@ -79,7 +79,7 @@ type alias Row =
 
 type Msg
     = SetTableState T.State
-    | UpdateEdit String String
+    | UpdateNewRowField Name String
     | KeyDown Int
     | EditCell Int String String
     | UpdateEditedCell String
@@ -103,13 +103,13 @@ empty =
         }
 
 
-update : Msg -> Table -> Table
-update msg (Table data) =
-    Table <| updateData msg data
+update : (Types.Name -> Maybe Types.SheetId) -> Msg -> Table -> Table
+update getSheetId msg (Table data) =
+    Table <| updateData getSheetId msg data
 
 
-updateData : Msg -> TableData -> TableData
-updateData msg data =
+updateData : (Types.Name -> Maybe Types.SheetId) -> Msg -> TableData -> TableData
+updateData getSheetId msg data =
     let
         commit d =
             case d.editedCell of
@@ -141,7 +141,7 @@ updateData msg data =
         SetTableState state ->
             { data | state = state }
 
-        UpdateEdit fieldName fieldValue ->
+        UpdateNewRowField fieldName fieldValue ->
             let
                 updateField field =
                     if field.name == fieldName then
@@ -166,7 +166,7 @@ updateData msg data =
                     }
             in
             if code == 13 then
-                -- Enter key
+                -- Enter key, insert a new row
                 { data
                     | fields = L.map resetEdit data.fields
                     , rows = editsToRow :: data.rows
@@ -219,7 +219,7 @@ updateData msg data =
                 |> (setNewFieldType <|
                         case data.newField.fieldType of
                             DataField _ ->
-                                FormulaField ""
+                                FormulaField (Cell.fromSource getSheetId "")
 
                             FormulaField _ ->
                                 DataField StringType
@@ -242,31 +242,7 @@ updateData msg data =
                    )
 
         OnInputNewFieldFormula input ->
-            setNewFieldType (FormulaField input) data
-
-
-updateReferences : (Name -> Name) -> Table -> Table
-updateReferences f (Table data) =
-    Table
-        { data
-            | fields = L.map (updateReferencesInField f) data.fields
-        }
-
-
-updateReferencesInField : (Name -> Name) -> Field -> Field
-updateReferencesInField f field =
-    case field.fieldType of
-        DataField _ ->
-            field
-
-        FormulaField formula ->
-            { field
-                | fieldType =
-                    FormulaField
-                        (AST.updateReferences f formula
-                            |> Result.withDefault formula
-                        )
-            }
+            setNewFieldType (FormulaField (Cell.fromSource getSheetId input)) data
 
 
 view : Config msg -> Table -> Html msg
@@ -279,7 +255,7 @@ view config (Table ({ newField } as data)) =
             ]
         ]
         [ tableView config data
-        , newFieldView newField config.toMsg
+        , newFieldView newField config.getSheetName config.toMsg
         ]
 
 
@@ -294,8 +270,8 @@ tableView config ({ rows, state } as data) =
         [ T.view (sortableTableConfig config data) state rows |> H.fromUnstyled ]
 
 
-newFieldView : Field -> (Msg -> msg) -> Html msg
-newFieldView newField toMsg =
+newFieldView : Field -> (Types.SheetId -> Maybe Types.Name) -> (Msg -> msg) -> Html msg
+newFieldView newField getSheetName toMsg =
     H.div
         [ css
             [ flex3 (int 0) (int 0) (px 100)
@@ -316,9 +292,15 @@ newFieldView newField toMsg =
                     text "Data"
             ]
         , case newField.fieldType of
-            FormulaField formula ->
+            FormulaField cell ->
                 input
-                    [ value formula
+                    [ value
+                        (Cell.sourceView getSheetName cell
+                            -- This case should be logged elswhere than in a view.
+                            -- Here, we show the error loud and clear to prevent
+                            -- corrupting more data.
+                            |> Maybe.withDefault "error : found an orphan sheet id reference"
+                        )
                     , onInput (OnInputNewFieldFormula >> toMsg)
                     ]
                     []
@@ -337,12 +319,13 @@ newFieldView newField toMsg =
 
 
 type alias Resolver =
-    LocatedName -> ValueOrError
+    Types.LocatedName -> ValueOrError
 
 
 type alias Config msg =
     { toMsg : Msg -> msg
     , resolveAbsolute : Resolver
+    , getSheetName : Types.SheetId -> Maybe Types.Name
     }
 
 
@@ -415,7 +398,7 @@ sortableTableConfig { toMsg, resolveAbsolute } { fields, editedCell } =
         }
 
 
-eval : Resolver -> Table -> Types.Value
+eval : Resolver -> Table -> Types.Table
 eval resolveAbsolute (Table data) =
     let
         evalRow row =
@@ -423,13 +406,12 @@ eval resolveAbsolute (Table data) =
                 |> L.map (\f -> ( f.name, evalField resolveAbsolute data.fields [] f row ))
                 |> D.fromList
     in
-    Types.TableValue
-        { fields = data.fields |> List.map .name
-        , rows = data.rows |> L.map evalRow
-        }
+    { fields = data.fields |> List.map .name
+    , rows = data.rows |> L.map evalRow
+    }
 
 
-evalField : Resolver -> List Field -> List LocatedName -> Field -> Row -> ValueOrError
+evalField : Resolver -> List Field -> List Types.LocatedName -> Field -> Row -> ValueOrError
 evalField resolveAbsolute fields ancestors field row =
     let
         resolveRelative : Name -> ValueOrError
@@ -438,9 +420,9 @@ evalField resolveAbsolute fields ancestors field row =
                 |> L.filter (.name >> (==) name)
                 |> L.head
                 |> Result.fromMaybe (Types.UndefinedLocalReferenceError name)
-                |> Result.andThen (\f -> evalField resolveAbsolute fields (( "", field.name ) :: ancestors) f row)
+                |> Result.andThen (\f -> evalField resolveAbsolute fields (fieldRef :: ancestors) f row)
 
-        context : AST.Context
+        context : AST.Context Types.SheetId
         context =
             { resolveGlobalReference = resolveAbsolute
             , resolveLocalReference = resolveRelative
@@ -459,18 +441,21 @@ evalField resolveAbsolute fields ancestors field row =
                                 >> Result.map Types.IntValue
                    )
 
-        evalFormulaField formula =
-            AST.evalString context formula
+        fieldRef =
+            ( -1
+              -- TODO find a better way to reference local values.
+            , field.name
+            )
 
         go () =
             case field.fieldType of
                 DataField dataType ->
                     evalDataField dataType
 
-                FormulaField formula ->
-                    evalFormulaField formula
+                FormulaField cell ->
+                    Cell.eval context cell
     in
-    AST.checkCycle ( "", field.name ) ancestors go
+    AST.checkCycle fieldRef ancestors go
 
 
 tfoot toMsg fields =
@@ -485,7 +470,7 @@ tfoot toMsg fields =
                     td [ css [ position sticky, bottom (px 0) ] ]
                         [ input
                             [ value f.edit
-                            , onInput (UpdateEdit f.name >> toMsg)
+                            , onInput (UpdateNewRowField f.name >> toMsg)
                             , onKeyDown (KeyDown >> toMsg)
                             ]
                             []
@@ -510,7 +495,7 @@ thead fields toMsg headers =
                             td [ css [ position sticky, bottom (px 0) ] ]
                                 [ input
                                     [ value f.edit
-                                    , onInput (UpdateEdit f.name >> toMsg)
+                                    , onInput (UpdateNewRowField f.name >> toMsg)
                                     , onKeyDown (KeyDown >> toMsg)
                                     ]
                                     []

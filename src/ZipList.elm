@@ -3,6 +3,7 @@ module ZipList exposing
     , append
     , current
     , filter
+    , get
     , map
     , member
     , removeCurrent
@@ -33,6 +34,13 @@ singleton a =
     ZipList (Data [] a [])
 
 
+get : (a -> Bool) -> ZipList a -> Maybe a
+get condition list =
+    toList list
+        |> List.filter condition
+        |> List.head
+
+
 map : (a -> b) -> ZipList a -> ZipList b
 map f (ZipList { before_, current_, after_ }) =
     ZipList (Data (L.map f before_) (f current_) (L.map f after_))
@@ -59,10 +67,8 @@ toListWithPosition tag (ZipList { before_, current_, after_ }) =
         ]
 
 
-
-{- Move `current` to the first item the matches the given condition. -}
-
-
+{-| Move `current` to the first item the matches the given condition.
+-}
 select : (a -> Bool) -> ZipList a -> Maybe (ZipList a)
 select f (ZipList { before_, current_, after_ }) =
     let

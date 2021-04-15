@@ -5,10 +5,12 @@ module Document exposing
     , Sheet(..)
     , cellSource
     , commitEdit
-    , get
+    ,  getValue
+       -- only used for testing
+
     , gridSheet
     , init
-    ,  insert
+    ,  insertCellSource
        -- Not used but useful for testing.
        -- TODO: find a way to test without it.
 
@@ -17,7 +19,8 @@ module Document exposing
     , removeSheet
     , renameSheet
     , selectSheet
-    , sheetNames
+    , sheetName
+    , sheetsWithIds
     , subscriptions
     , tableSheet
     , update
@@ -25,11 +28,6 @@ module Document exposing
     )
 
 import AST
-    exposing
-        ( AST(..)
-        , BinaryOp(..)
-        , FormulaAST(..)
-        )
 import Cell exposing (Cell)
 import Css exposing (..)
 import Dict as D exposing (Dict)
@@ -40,8 +38,12 @@ import MyPivotTable exposing (PivotTable)
 import MyTable as Table exposing (Table)
 import Result as R
 import Tuple as T
-import Types
+import Types exposing (Name)
 import ZipList as ZL exposing (ZipList)
+
+
+
+-- DOCUMENT
 
 
 type Document
@@ -50,49 +52,218 @@ type Document
 
 type alias DocData =
     { cells : Dict Types.LocatedName Cell
-    , sheets : ZipList SheetItem
+    , sheets : ZipList ( Types.SheetId, Sheet )
+    , sheetIds : Dict Types.Name Types.SheetId
+    , nextSheetId : Types.SheetId
     }
 
 
-type alias SheetItem =
-    { name : String
-    , sheet : Sheet
-    }
+
+-- SHEETS
 
 
 type Sheet
-    = GridSheet Grid
-    | TableSheet Table
-    | PivotTableSheet PivotTable
+    = GridSheet Name Grid
+    | TableSheet Name Table
+    | PivotTableSheet Name PivotTable
 
 
-gridSheet : Sheet
-gridSheet =
-    GridSheet Grid.init
+gridSheet : Name -> Sheet
+gridSheet name =
+    GridSheet name Grid.init
 
 
-tableSheet : Sheet
-tableSheet =
-    TableSheet Table.empty
+tableSheet : Name -> Sheet
+tableSheet name =
+    TableSheet name Table.empty
 
 
-pivotTableSheet : Sheet
-pivotTableSheet =
-    PivotTableSheet MyPivotTable.empty
+pivotTableSheet : Name -> Sheet
+pivotTableSheet name =
+    PivotTableSheet name MyPivotTable.empty
+
+
+currentSheet : DocData -> Sheet
+currentSheet { sheets } =
+    ZL.current sheets |> T.second
+
+
+currentSheetId : DocData -> Types.SheetId
+currentSheetId { sheets } =
+    ZL.current sheets |> T.first
+
+
+currentSheetName : DocData -> Types.Name
+currentSheetName { sheets } =
+    ZL.current sheets |> T.second |> sheetName
+
+
+sheetName : Sheet -> Name
+sheetName sheet =
+    case sheet of
+        GridSheet name _ ->
+            name
+
+        TableSheet name _ ->
+            name
+
+        PivotTableSheet name _ ->
+            name
+
+
+sheetsWithIds : Document -> List (Position ( Types.SheetId, Sheet ))
+sheetsWithIds (Document { sheets }) =
+    sheets
+        |> ZL.toListWithPosition
+            { before = Before
+            , current = Current
+            , after = After
+            }
+
+
+type Position a
+    = Before a
+    | Current a
+    | After a
+
+
+selectSheet : Types.SheetId -> Document -> Result Types.Error Document
+selectSheet selectedId (Document ({ sheets } as data)) =
+    ZL.select (T.first >> (==) selectedId) sheets
+        |> R.fromMaybe (Types.UndefinedSheetError (selectedId |> String.fromInt))
+        |> R.map (\newSheets -> Document { data | sheets = newSheets })
+
+
+sheetExists : Types.Name -> DocData -> Bool
+sheetExists name { sheetIds } =
+    D.member name sheetIds
+
+
+getSheet : Types.SheetId -> DocData -> Maybe Sheet
+getSheet sheetId data =
+    ZL.get (T.first >> (==) sheetId) data.sheets
+        |> Maybe.map T.second
+
+
+insertSheet : Sheet -> Document -> Result Types.Error Document
+insertSheet sheet (Document data) =
+    if sheetExists (sheetName sheet) data then
+        Err (Types.DuplicateSheetNameError (sheetName sheet))
+
+    else
+        Ok <|
+            Document
+                { data
+                    | sheets = ZL.append [ ( data.nextSheetId, sheet ) ] data.sheets
+                    , nextSheetId = data.nextSheetId + 1
+                    , sheetIds = D.insert (sheetName sheet) data.nextSheetId data.sheetIds
+                }
+
+
+removeSheet : Types.SheetId -> Document -> Result Types.Error Document
+removeSheet sheetId (Document d) =
+    let
+        newSheetsRes =
+            if sheetId == currentSheetId d then
+                ZL.removeCurrent d.sheets
+                    |> Maybe.map
+                        (\newSheets ->
+                            { newSheets = newSheets
+                            , maybeSheetName = Just (currentSheetName d)
+                            }
+                        )
+                    |> R.fromMaybe (Types.RemovingLastSheetError (currentSheetName d))
+
+            else if ZL.map T.first d.sheets |> ZL.member sheetId then
+                Ok
+                    { newSheets =
+                        ZL.filter (T.first >> (/=) sheetId) d.sheets
+                            |> Maybe.withDefault d.sheets
+                    , maybeSheetName =
+                        getSheet sheetId d
+                            |> Maybe.map sheetName
+                    }
+
+            else
+                Err (Types.UndefinedSheetError (String.fromInt sheetId))
+    in
+    newSheetsRes
+        |> R.map
+            (\{ newSheets, maybeSheetName } ->
+                Document
+                    { d
+                        | sheets = newSheets
+                        , sheetIds =
+                            maybeSheetName
+                                |> Maybe.map (\name -> D.remove name d.sheetIds)
+                                |> Maybe.withDefault d.sheetIds
+                        , cells = d.cells |> D.filter (\( id, _ ) _ -> id /= sheetId)
+                    }
+            )
+
+
+renameSheet : Types.SheetId -> Types.Name -> Document -> Result Types.Error Document
+renameSheet sheetId newName (Document data) =
+    let
+        updateSheetName : ( Name, Name ) -> DocData -> DocData
+        updateSheetName ( validNewName, oldName ) d =
+            let
+                renameSheet_ ( currentId, sheet ) =
+                    T.pair currentId <|
+                        if currentId == sheetId then
+                            case sheet of
+                                GridSheet _ sheetData ->
+                                    GridSheet validNewName sheetData
+
+                                TableSheet _ sheetData ->
+                                    TableSheet validNewName sheetData
+
+                                PivotTableSheet _ sheetData ->
+                                    PivotTableSheet validNewName sheetData
+
+                        else
+                            sheet
+            in
+            { d
+                | sheets = ZL.map renameSheet_ d.sheets
+                , sheetIds =
+                    d.sheetIds
+                        |> D.remove oldName
+                        |> D.insert validNewName sheetId
+            }
+    in
+    if sheetExists newName data then
+        Err (Types.DuplicateSheetNameError newName)
+
+    else
+        AST.parseName newName
+            |> R.mapError (always Types.InvalidSheetNameError)
+            |> R.andThen
+                (\validNewName ->
+                    getSheet sheetId data
+                        |> Maybe.map (sheetName >> T.pair validNewName)
+                        |> R.fromMaybe (Types.UnexpectedError ("Invalid SheetId: " ++ String.fromInt sheetId))
+                )
+            |> R.map updateSheetName
+            |> R.map (\updater -> Document (updater data))
+
+
+
+-- SUSCRIPTIONS
 
 
 subscriptions : Document -> Sub Msg
 subscriptions (Document data) =
-    let
-        { sheet } =
-            ZL.current data.sheets
-    in
-    case sheet of
-        PivotTableSheet pt ->
+    case currentSheet data of
+        PivotTableSheet _ pt ->
             Sub.map PivotTableMsg (MyPivotTable.subscriptions pt)
 
         _ ->
             Sub.none
+
+
+
+-- UPDATE
 
 
 type Msg
@@ -109,38 +280,44 @@ update msg (Document data) =
 updateData : Msg -> DocData -> ( DocData, Cmd Msg )
 updateData msg data =
     let
-        { sheet, name } =
-            ZL.current data.sheets
-
         updateSheet newSheet d =
             { d
-                | sheets = ZL.setCurrent (SheetItem name newSheet) d.sheets
+                | sheets = ZL.setCurrent ( currentSheetId data, newSheet ) d.sheets
             }
 
-        getSource sourceName =
+        evalSheet : Sheet -> Maybe Types.Table
+        evalSheet sheet =
+            case sheet of
+                TableSheet _ t ->
+                    Just (Table.eval (evalCell data []) t)
+
+                _ ->
+                    Nothing
+
+        getTable : Types.SheetId -> Maybe Types.Table
+        getTable sourceSheetId =
             ZL.toList data.sheets
-                |> List.filter (.name >> (==) sourceName)
+                |> List.filter (T.first >> (==) sourceSheetId)
                 |> List.head
-                |> R.fromMaybe (Types.UndefinedSheetError sourceName)
-                |> R.andThen (.sheet >> evalSheet data)
+                |> Maybe.andThen (T.second >> evalSheet)
     in
-    case ( msg, sheet ) of
-        ( GridMsg gridMsg, GridSheet grid ) ->
+    case ( msg, currentSheet data ) of
+        ( GridMsg gridMsg, GridSheet _ grid ) ->
             ( updateGrid (Grid.update gridMsg grid) data
             , Cmd.none
             )
 
-        ( TableMsg tableMsg, TableSheet table ) ->
-            ( updateSheet (TableSheet <| Table.update tableMsg table) data
+        ( TableMsg tableMsg, TableSheet name table ) ->
+            ( updateSheet (TableSheet name <| Table.update (\n -> D.get n data.sheetIds) tableMsg table) data
             , Cmd.none
             )
 
-        ( PivotTableMsg ptMsg, PivotTableSheet pt ) ->
+        ( PivotTableMsg ptMsg, PivotTableSheet name pt ) ->
             let
                 ( newPt, cmd ) =
-                    MyPivotTable.update getSource ptMsg pt
+                    MyPivotTable.update getTable ptMsg pt
             in
-            ( updateSheet (PivotTableSheet newPt) data
+            ( updateSheet (PivotTableSheet name newPt) data
             , Cmd.map PivotTableMsg cmd
             )
 
@@ -149,10 +326,10 @@ updateData msg data =
 
 
 commitEdit : Document -> Document
-commitEdit (Document ({ sheets } as data)) =
+commitEdit (Document data) =
     Document <|
-        case ZL.current sheets |> .sheet of
-            GridSheet grid ->
+        case currentSheet data of
+            GridSheet _ grid ->
                 updateGrid (Grid.commit grid) data
 
             _ ->
@@ -163,7 +340,7 @@ updateGrid : ( Grid, Grid.Cmd ) -> DocData -> DocData
 updateGrid ( newGrid, gridCmd ) data =
     let
         newItem =
-            SheetItem (ZL.current data.sheets |> .name) (GridSheet newGrid)
+            ( currentSheetId data, GridSheet (currentSheetName data) newGrid )
 
         newData =
             { data | sheets = ZL.setCurrent newItem data.sheets }
@@ -176,145 +353,26 @@ updateGrid ( newGrid, gridCmd ) data =
             insertHelp cellName content newData
 
 
-init : Types.Name -> Sheet -> Document
-init name sheet =
+
+-- INIT
+
+
+init : Sheet -> Document
+init sheet =
     Document
         { cells = D.empty
-        , sheets = ZL.singleton (SheetItem name sheet)
+        , sheets = ZL.singleton ( 0, sheet )
+        , sheetIds = D.fromList [ ( sheetName sheet, 0 ) ]
+        , nextSheetId = 1
         }
 
 
-type Position a
-    = Before a
-    | Current a
-    | After a
+
+-- GRID CELLS
 
 
-sheetNames : Document -> List (Position Types.Name)
-sheetNames (Document { sheets }) =
-    ZL.map .name sheets
-        |> ZL.toListWithPosition
-            { before = Before
-            , current = Current
-            , after = After
-            }
-
-
-currentSheetName : DocData -> Types.Name
-currentSheetName { sheets } =
-    ZL.current sheets |> .name
-
-
-selectSheet : Types.Name -> Document -> Result Types.Error Document
-selectSheet selectedName (Document ({ sheets } as data)) =
-    ZL.select (.name >> (==) selectedName) sheets
-        |> R.fromMaybe (Types.UndefinedSheetError selectedName)
-        |> R.map (\newSheets -> Document { data | sheets = newSheets })
-
-
-sheetExists : Types.Name -> DocData -> Bool
-sheetExists name { sheets } =
-    ZL.member name (ZL.map .name sheets)
-
-
-insertSheet : Types.Name -> Sheet -> Document -> Result Types.Error Document
-insertSheet name sheet (Document data) =
-    if sheetExists name data then
-        Err (Types.DuplicateSheetNameError name)
-
-    else
-        Ok <|
-            Document
-                { data
-                    | sheets = ZL.append [ SheetItem name sheet ] data.sheets
-                }
-
-
-removeSheet : Types.Name -> Document -> Result Types.Error Document
-removeSheet name (Document d) =
-    let
-        newSheetsRes =
-            if name == currentSheetName d then
-                ZL.removeCurrent d.sheets
-                    |> R.fromMaybe (Types.RemovingLastSheetError name)
-
-            else if sheetExists name d then
-                ZL.filter (.name >> (/=) name) d.sheets
-                    |> Maybe.withDefault d.sheets
-                    |> Ok
-
-            else
-                Err (Types.UndefinedSheetError name)
-    in
-    newSheetsRes
-        |> R.map
-            (\sheets ->
-                Document
-                    { d
-                        | sheets = sheets
-                        , cells = d.cells |> D.filter (\( sheet, _ ) _ -> sheet /= name)
-                    }
-            )
-
-
-renameSheet : Types.Name -> Types.Name -> Document -> Result Types.Error Document
-renameSheet oldName newName (Document data) =
-    let
-        updateName parsedName currentName =
-            if currentName == oldName then
-                parsedName
-
-            else
-                currentName
-
-        updateSheetName : (Types.Name -> Types.Name) -> DocData -> DocData
-        updateSheetName rename d =
-            let
-                updateItemName item =
-                    { item
-                        | name = rename item.name
-                        , sheet = updateReferencesInSheet item.sheet
-                    }
-
-                updateReferencesInSheet sheet =
-                    case sheet of
-                        TableSheet table ->
-                            TableSheet (Table.updateReferences rename table)
-
-                        GridSheet _ ->
-                            sheet
-
-                        PivotTableSheet _ ->
-                            Debug.todo "rename references in pivot tables"
-
-                updateCellRefs ( sheetName, cellName ) cell renamed =
-                    D.insert ( rename sheetName, cellName ) (Cell.updateReferences rename cell) renamed
-            in
-            { d
-                | sheets = ZL.map updateItemName d.sheets
-                , cells = D.foldr updateCellRefs D.empty d.cells
-            }
-    in
-    if sheetExists oldName data then
-        if oldName == newName then
-            Ok (Document data)
-
-        else if sheetExists newName data then
-            Err (Types.DuplicateSheetNameError newName)
-
-        else
-            AST.parseName newName
-                |> R.mapError (always Types.InvalidSheetNameError)
-                |> R.map (updateName >> updateSheetName)
-                |> R.map (\updater -> Document (updater data))
-
-    else
-        Err <|
-            Types.UndefinedSheetError oldName
-
-
-insert : Types.Name -> String -> Document -> Document
-insert cellName value (Document data) =
+insertCellSource : Types.Name -> String -> Document -> Document
+insertCellSource cellName value (Document data) =
     Document <| insertHelp cellName value data
 
 
@@ -322,65 +380,60 @@ insertHelp : Types.Name -> String -> DocData -> DocData
 insertHelp cellName value d =
     case value of
         "" ->
-            { d | cells = D.remove ( currentSheetName d, cellName ) d.cells }
+            { d | cells = D.remove ( currentSheetId d, cellName ) d.cells }
 
         _ ->
             { d
                 | cells =
-                    D.insert ( currentSheetName d, cellName )
-                        (Cell.fromSource value)
+                    D.insert ( currentSheetId d, cellName )
+                        (Cell.fromSource (\name -> D.get name d.sheetIds) value)
                         d.cells
             }
 
 
-getCell : Types.Name -> Types.Name -> DocData -> Result Types.Error Cell
-getCell sheetName cellName data =
-    if sheetExists sheetName data then
-        D.get ( sheetName, cellName ) data.cells
-            |> R.fromMaybe (Types.UndefinedGlobalReferenceError ( sheetName, cellName ))
-
-    else
-        Err <| Types.UndefinedSheetError sheetName
+getCell : Types.SheetId -> Types.Name -> DocData -> Result Types.Error Cell
+getCell sheetId cellName data =
+    D.get ( sheetId, cellName ) data.cells
+        |> R.fromMaybe (Types.UndefinedGlobalReferenceError ( sheetId, cellName ))
 
 
 cellSource : Types.Name -> Document -> Result Types.Error String
 cellSource cellName (Document d) =
-    getCell (currentSheetName d) cellName d |> R.map Cell.source
+    getCell (currentSheetId d) cellName d
+        |> R.andThen
+            (Cell.sourceView
+                (\id -> getSheet id d |> Maybe.map sheetName)
+                >> R.fromMaybe (Types.UnexpectedError "Found an orphan sheet id reference")
+            )
 
 
-get : Types.Name -> Document -> Types.ValueOrError
-get name (Document data) =
-    evalCell data [] ( currentSheetName data, name )
+getValue : Types.Name -> Document -> Types.ValueOrError
+getValue name (Document data) =
+    evalCell data [] ( currentSheetId data, name )
 
 
 evalCell : DocData -> List Types.LocatedName -> Types.LocatedName -> Types.ValueOrError
-evalCell data ancestors name =
+evalCell data ancestors cellRef =
     let
         resolveAbsolute =
-            evalCell data (name :: ancestors)
+            evalCell data (cellRef :: ancestors)
 
         context =
             { resolveGlobalReference = resolveAbsolute
             , resolveLocalReference =
                 \relativeName ->
-                    resolveAbsolute ( T.first name, relativeName )
+                    resolveAbsolute ( T.first cellRef, relativeName )
             }
 
         go () =
-            getCell (T.first name) (T.second name) data
+            getCell (T.first cellRef) (T.second cellRef) data
                 |> R.andThen (Cell.eval context)
     in
-    AST.checkCycle name ancestors go
+    AST.checkCycle cellRef ancestors go
 
 
-evalSheet : DocData -> Sheet -> Types.ValueOrError
-evalSheet data sheet =
-    case sheet of
-        TableSheet t ->
-            Ok (Table.eval (evalCell data []) t)
 
-        _ ->
-            Err (Types.TypeError "Only table sheets can be evaluated")
+-- VIEW
 
 
 type alias Config msg =
@@ -392,7 +445,7 @@ view { toMsg } ((Document data) as doc) =
     let
         gridConfig =
             { toMsg = GridMsg >> toMsg
-            , getCellValue = \name -> get name doc
+            , getCellValue = \name -> getValue name doc
             , getCellSource = \name -> cellSource name doc |> R.withDefault ""
             }
 
@@ -401,6 +454,7 @@ view { toMsg } ((Document data) as doc) =
             , resolveAbsolute =
                 \name ->
                     evalCell data [] name
+            , getSheetName = \id -> getSheet id data |> Maybe.map sheetName
             }
     in
     div
@@ -410,13 +464,13 @@ view { toMsg } ((Document data) as doc) =
             , overflow auto
             ]
         ]
-        [ case ZL.current data.sheets |> .sheet of
-            GridSheet grid ->
+        [ case ZL.current data.sheets |> T.second of
+            GridSheet _ grid ->
                 Grid.view gridConfig grid
 
-            TableSheet table ->
+            TableSheet _ table ->
                 Table.view tableConfig table
 
-            PivotTableSheet pt ->
+            PivotTableSheet _ pt ->
                 MyPivotTable.view (PivotTableMsg >> toMsg) pt
         ]

@@ -3,13 +3,14 @@ Todo
 
 - Feature : Save to file (and load file)
 - Feature : Local storage
+- Feature : Common look for Grid, Table and PivotTable
 - Feature : Functions (which ones ?)
 - Feature : Support large sheets (#row and col > 1_000_000)
 - Feature : Edit table field definition
 - Feature : Cancel cell edition with Echap
 - Feature : Cancel sheet edition with Echap
 - Feature : CSV import
-- Feature : Copy/paste (bonus : suport copy-pasting from Excel)
+- Feature : Copy/paste (bonus : support copy-pasting from Excel)
 - Feature : More operators (* , ^, /, unary +, ++ on strings) and parenthesis 
 - Feature : Re-order sheets
 - Feature : Support floating precision numbers
@@ -28,6 +29,9 @@ Doing
 =====
 
 - Feature : Pivot tables
+    - TODO : 
+        - Create it from the source table (instead of specifying the source within the PT)
+        - Garbage collect sheets by reference counting so that a PT keeps having a valid source when a table is deleted
     - QUESTION : what do to when adding/removing/renaming fields in the source table ?
         - renaming : automatically use the new name in the pivot table
         - adding : just add it to the Unused field group

@@ -3,6 +3,7 @@ module Types exposing
     , Error(..)
     , LocatedName
     , Name
+    , SheetId
     , Table
     , Value(..)
     , ValueOrError
@@ -23,6 +24,7 @@ type Error
     | RemovingLastSheetError Name
     | InvalidSheetNameError
     | DuplicateSheetNameError Name
+    | UnexpectedError String
 
 
 type alias Name =
@@ -30,7 +32,11 @@ type alias Name =
 
 
 type alias LocatedName =
-    ( Name, Name )
+    ( SheetId, Name )
+
+
+type alias SheetId =
+    Int
 
 
 type Value

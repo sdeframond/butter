@@ -34,7 +34,7 @@ type PivotTable
 
 
 type alias State =
-    { sourceName : Name
+    { sourceId : Types.SheetId
     , source : Maybe Types.Table
     , fields : List Draggable
     , dnd : DnDList.Model
@@ -42,14 +42,14 @@ type alias State =
 
 
 type Msg
-    = OnInputSource String
+    = OnInputSource String -- TODO remove this message
     | DnDMsg DnDList.Msg
 
 
 empty : PivotTable
 empty =
     PivotTable
-        { sourceName = ""
+        { sourceId = -1 -- TODO get the ID as a aparameter
         , source = Nothing
         , fields = []
         , dnd = dndSystem.model
@@ -73,27 +73,17 @@ subscriptions (PivotTable state) =
     dndSystem.subscriptions state.dnd
 
 
-update : (Name -> ValueOrError) -> Msg -> PivotTable -> ( PivotTable, Cmd Msg )
-update getSourceValue msg (PivotTable state) =
+update : (Types.SheetId -> Maybe Types.Table) -> Msg -> PivotTable -> ( PivotTable, Cmd Msg )
+update getTable msg (PivotTable state) =
     case msg of
         OnInputSource input ->
             let
                 source =
-                    getSourceValue input
-                        |> Result.toMaybe
-                        |> Maybe.andThen
-                            (\v ->
-                                case v of
-                                    Types.TableValue t ->
-                                        Just t
-
-                                    _ ->
-                                        Nothing
-                            )
+                    input |> String.toInt |> Maybe.andThen getTable
             in
             ( PivotTable
                 { state
-                    | sourceName = input
+                    | sourceId = input |> String.toInt |> Maybe.withDefault -1
                     , source = source
                     , fields =
                         (source
@@ -189,7 +179,7 @@ optionsView toMsg state =
             , flexDirection column
             ]
         ]
-        [ H.input [ Events.onInput (OnInputSource >> toMsg), Attr.value state.sourceName ] []
+        [ H.input [ Events.onInput (OnInputSource >> toMsg), Attr.value (state.sourceId |> String.fromInt) ] []
         , groupFieldView toMsg state.dnd maybeDragItem "Fields" UnusedGroup indexedFields
         , groupFieldView toMsg state.dnd maybeDragItem "Columns" ColumnsGroup indexedFields
         , groupFieldView toMsg state.dnd maybeDragItem "Rows" RowsGroup indexedFields
