@@ -1,13 +1,12 @@
-module MyPivotTable exposing (Msg, PivotTable, empty, subscriptions, update, view)
+module MyPivotTable exposing (Msg, PivotTable, init, subscriptions, update, view)
 
 import Css exposing (..)
-import Dict exposing (Dict)
+import Dict
 import DnDList.Groups as DnDList
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as Attr
-import Html.Styled.Events as Events
 import PivotTable as PT
-import Types exposing (Name, ValueOrError)
+import Types exposing (Name)
 
 
 dndConfig : DnDList.Config Draggable
@@ -34,24 +33,29 @@ type PivotTable
 
 
 type alias State =
-    { sourceId : Types.SheetId
-    , source : Maybe Types.Table
+    { table : Types.Table
     , fields : List Draggable
     , dnd : DnDList.Model
     }
 
 
 type Msg
-    = OnInputSource String -- TODO remove this message
-    | DnDMsg DnDList.Msg
+    = DnDMsg DnDList.Msg
 
 
-empty : PivotTable
-empty =
+init : Types.Table -> PivotTable
+init table =
+    let
+        fields =
+            (table.fields |> List.map (Just >> Draggable UnusedGroup))
+                ++ [ Draggable UnusedGroup Nothing
+                   , Draggable ColumnsGroup Nothing
+                   , Draggable RowsGroup Nothing
+                   ]
+    in
     PivotTable
-        { sourceId = -1 -- TODO get the ID as a aparameter
-        , source = Nothing
-        , fields = []
+        { table = table
+        , fields = fields
         , dnd = dndSystem.model
         }
 
@@ -73,31 +77,9 @@ subscriptions (PivotTable state) =
     dndSystem.subscriptions state.dnd
 
 
-update : (Types.SheetId -> Maybe Types.Table) -> Msg -> PivotTable -> ( PivotTable, Cmd Msg )
-update getTable msg (PivotTable state) =
+update : Msg -> PivotTable -> ( PivotTable, Cmd Msg )
+update msg (PivotTable state) =
     case msg of
-        OnInputSource input ->
-            let
-                source =
-                    input |> String.toInt |> Maybe.andThen getTable
-            in
-            ( PivotTable
-                { state
-                    | sourceId = input |> String.toInt |> Maybe.withDefault -1
-                    , source = source
-                    , fields =
-                        (source
-                            |> Maybe.map (.fields >> List.map (Just >> Draggable UnusedGroup))
-                            |> Maybe.withDefault []
-                        )
-                            ++ [ Draggable UnusedGroup Nothing
-                               , Draggable ColumnsGroup Nothing
-                               , Draggable RowsGroup Nothing
-                               ]
-                }
-            , Cmd.none
-            )
-
         DnDMsg dndMsg ->
             let
                 ( dnd, fields ) =
@@ -150,12 +132,7 @@ tableView state =
             , overflow auto
             ]
         ]
-        [ case state.source of
-            Just table ->
-                PT.pivotTableHtml ptConfig (PT.makeTable table.rows) |> H.fromUnstyled
-
-            Nothing ->
-                H.text "Please select a table"
+        [ PT.pivotTableHtml ptConfig (PT.makeTable state.table.rows) |> H.fromUnstyled
         ]
 
 
@@ -179,8 +156,7 @@ optionsView toMsg state =
             , flexDirection column
             ]
         ]
-        [ H.input [ Events.onInput (OnInputSource >> toMsg), Attr.value (state.sourceId |> String.fromInt) ] []
-        , groupFieldView toMsg state.dnd maybeDragItem "Fields" UnusedGroup indexedFields
+        [ groupFieldView toMsg state.dnd maybeDragItem "Fields" UnusedGroup indexedFields
         , groupFieldView toMsg state.dnd maybeDragItem "Columns" ColumnsGroup indexedFields
         , groupFieldView toMsg state.dnd maybeDragItem "Rows" RowsGroup indexedFields
         , ghostField toMsg state.dnd maybeDragItem

@@ -26,7 +26,7 @@ suite =
             , test "preserves ordering" <|
                 \_ -> Expect.equal (ZL.select ((==) 3) zlist |> Maybe.map ZL.toList) (Just [ 1, 2, 3, 4, 5 ])
             , test "returns nothing when nothing matches" <|
-                \_ -> Expect.equal (ZL.select (always False)) zlist |> Maybe.map ZL.toList) Nothing
+                \_ -> Expect.equal (ZL.select (always False) zlist |> Maybe.map ZL.toList) Nothing
             ]
         , todo "filter"
         , todo "map"

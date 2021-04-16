@@ -255,8 +255,26 @@ view config (Table ({ newField } as data)) =
             ]
         ]
         [ tableView config data
-        , newFieldView newField config.getSheetName config.toMsg
+        , leftColumnView
+            [ newFieldView newField config.getSheetName config.toMsg
+            , addPivotTableButton config.makePivotTableMsg
+            ]
         ]
+
+
+leftColumnView : List (Html msg) -> Html msg
+leftColumnView content =
+    H.div
+        [ css
+            [ flex3 (int 0) (int 0) (px 100)
+            , border3 (px 1) solid (rgb 0 0 0)
+            , height (pct 100)
+            , display inlineBlock
+            , displayFlex
+            , flexDirection column
+            ]
+        ]
+        content
 
 
 tableView : Config msg -> TableData -> Html msg
@@ -272,16 +290,7 @@ tableView config ({ rows, state } as data) =
 
 newFieldView : Field -> (Types.SheetId -> Maybe Types.Name) -> (Msg -> msg) -> Html msg
 newFieldView newField getSheetName toMsg =
-    H.div
-        [ css
-            [ flex3 (int 0) (int 0) (px 100)
-            , border3 (px 1) solid (rgb 0 0 0)
-            , height (pct 100)
-            , display inlineBlock
-            , displayFlex
-            , flexDirection column
-            ]
-        ]
+    H.div []
         [ input [ value newField.name, onInput (OnInputNewFieldName >> toMsg) ] []
         , H.button [ onClick (OnClickNewFieldTypeBtn |> toMsg) ]
             [ case newField.fieldType of
@@ -318,6 +327,11 @@ newFieldView newField getSheetName toMsg =
         ]
 
 
+addPivotTableButton : msg -> Html msg
+addPivotTableButton makePivotTableMsg =
+    H.button [ onClick makePivotTableMsg ] [ text "Make PivotTable" ]
+
+
 type alias Resolver =
     Types.LocatedName -> ValueOrError
 
@@ -326,6 +340,7 @@ type alias Config msg =
     { toMsg : Msg -> msg
     , resolveAbsolute : Resolver
     , getSheetName : Types.SheetId -> Maybe Types.Name
+    , makePivotTableMsg : msg
     }
 
 

@@ -68,7 +68,6 @@ initModel =
 type Msg
     = InsertGridSheet
     | InsertTableSheet
-    | InsertPivotTableSheet
     | SelectSheet Types.SheetId
     | RemoveSheet Types.SheetId
     | EditSheet ( Types.SheetId, Doc.Sheet )
@@ -117,9 +116,6 @@ updateModel msg model =
 
         InsertTableSheet ->
             ( insertSheet Doc.tableSheet, Cmd.none )
-
-        InsertPivotTableSheet ->
-            ( insertSheet Doc.pivotTableSheet, Cmd.none )
 
         SelectSheet sheetId ->
             ( { model
@@ -274,6 +270,5 @@ sheetSelector model =
         ]
         (addSheet InsertTableSheet "+table"
             :: addSheet InsertGridSheet "+grid"
-            :: addSheet InsertPivotTableSheet "+pivot table"
             :: (Doc.sheetsWithIds model.doc |> L.map sheetItem)
         )

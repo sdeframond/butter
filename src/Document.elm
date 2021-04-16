@@ -78,9 +78,9 @@ tableSheet name =
     TableSheet name Table.empty
 
 
-pivotTableSheet : Name -> Sheet
-pivotTableSheet name =
-    PivotTableSheet name MyPivotTable.empty
+pivotTableSheet : Name -> Types.Table -> Sheet
+pivotTableSheet name table =
+    PivotTableSheet name (MyPivotTable.init table)
 
 
 currentSheet : DocData -> Sheet
@@ -147,17 +147,21 @@ getSheet sheetId data =
 
 insertSheet : Sheet -> Document -> Result Types.Error Document
 insertSheet sheet (Document data) =
+    insertSheetHelp sheet data |> R.map Document
+
+
+insertSheetHelp : Sheet -> DocData -> Result Types.Error DocData
+insertSheetHelp sheet data =
     if sheetExists (sheetName sheet) data then
         Err (Types.DuplicateSheetNameError (sheetName sheet))
 
     else
         Ok <|
-            Document
-                { data
-                    | sheets = ZL.append [ ( data.nextSheetId, sheet ) ] data.sheets
-                    , nextSheetId = data.nextSheetId + 1
-                    , sheetIds = D.insert (sheetName sheet) data.nextSheetId data.sheetIds
-                }
+            { data
+                | sheets = ZL.append [ ( data.nextSheetId, sheet ) ] data.sheets
+                , nextSheetId = data.nextSheetId + 1
+                , sheetIds = D.insert (sheetName sheet) data.nextSheetId data.sheetIds
+            }
 
 
 removeSheet : Types.SheetId -> Document -> Result Types.Error Document
@@ -270,6 +274,7 @@ type Msg
     = GridMsg Grid.Msg
     | TableMsg Table.Msg
     | PivotTableMsg MyPivotTable.Msg
+    | MakePivotTable
 
 
 update : Msg -> Document -> ( Document, Cmd Msg )
@@ -284,22 +289,6 @@ updateData msg data =
             { d
                 | sheets = ZL.setCurrent ( currentSheetId data, newSheet ) d.sheets
             }
-
-        evalSheet : Sheet -> Maybe Types.Table
-        evalSheet sheet =
-            case sheet of
-                TableSheet _ t ->
-                    Just (Table.eval (evalCell data []) t)
-
-                _ ->
-                    Nothing
-
-        getTable : Types.SheetId -> Maybe Types.Table
-        getTable sourceSheetId =
-            ZL.toList data.sheets
-                |> List.filter (T.first >> (==) sourceSheetId)
-                |> List.head
-                |> Maybe.andThen (T.second >> evalSheet)
     in
     case ( msg, currentSheet data ) of
         ( GridMsg gridMsg, GridSheet _ grid ) ->
@@ -315,10 +304,22 @@ updateData msg data =
         ( PivotTableMsg ptMsg, PivotTableSheet name pt ) ->
             let
                 ( newPt, cmd ) =
-                    MyPivotTable.update getTable ptMsg pt
+                    MyPivotTable.update ptMsg pt
             in
             ( updateSheet (PivotTableSheet name newPt) data
             , Cmd.map PivotTableMsg cmd
+            )
+
+        ( MakePivotTable, TableSheet _ table ) ->
+            let
+                newSheet =
+                    pivotTableSheet
+                        ("PT" ++ String.fromInt data.nextSheetId)
+                        (Table.eval (evalCell data []) table)
+            in
+            ( insertSheetHelp newSheet data
+                |> Result.withDefault data
+            , Cmd.none
             )
 
         ( _, _ ) ->
@@ -455,6 +456,7 @@ view { toMsg } ((Document data) as doc) =
                 \name ->
                     evalCell data [] name
             , getSheetName = \id -> getSheet id data |> Maybe.map sheetName
+            , makePivotTableMsg = MakePivotTable |> toMsg
             }
     in
     div
