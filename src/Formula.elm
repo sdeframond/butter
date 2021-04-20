@@ -1,11 +1,11 @@
-module Cell exposing (Cell, eval, fromSource, isValid, sourceView)
+module Formula exposing (Formula, eval, fromSource, isValid, sourceView)
 
 import Ast exposing (Ast)
 import Types exposing (Error(..))
 
 
-type Cell
-    = Cell UserInput ParsedAst
+type Formula
+    = Formula UserInput ParsedAst
 
 
 type alias ParsedAst =
@@ -20,8 +20,8 @@ type alias OriginalSheetName =
     String
 
 
-isValid : Cell -> Bool
-isValid (Cell _ astResult) =
+isValid : Formula -> Bool
+isValid (Formula _ astResult) =
     case astResult of
         Ok _ ->
             True
@@ -30,8 +30,8 @@ isValid (Cell _ astResult) =
             False
 
 
-sourceView : (Types.SheetId -> Maybe Types.Name) -> Cell -> Maybe String
-sourceView getSheetName (Cell originalSource astResult) =
+sourceView : (Types.SheetId -> Maybe Types.Name) -> Formula -> Maybe String
+sourceView getSheetName (Formula originalSource astResult) =
     let
         referenceToString : Result OriginalSheetName Types.SheetId -> Maybe String
         referenceToString reference =
@@ -53,17 +53,17 @@ sourceView getSheetName (Cell originalSource astResult) =
         |> Result.withDefault (Just originalSource)
 
 
-fromSource : (Types.Name -> Maybe Types.SheetId) -> UserInput -> Cell
+fromSource : (Types.Name -> Maybe Types.SheetId) -> UserInput -> Formula
 fromSource getSheetId src =
     src
         |> Ast.parseCell
         |> Result.mapError (always Types.ParsingError)
         |> Result.map (Ast.mapSheetReferences (\sheetName -> getSheetId sheetName |> Result.fromMaybe sheetName))
-        |> Cell src
+        |> Formula src
 
 
-eval : Ast.Context Types.SheetId -> Cell -> Types.ValueOrError
-eval context (Cell _ astResult) =
+eval : Ast.Context Types.SheetId -> Formula -> Types.ValueOrError
+eval context (Formula _ astResult) =
     let
         myContext : Ast.Context (Result OriginalSheetName Types.SheetId)
         myContext =

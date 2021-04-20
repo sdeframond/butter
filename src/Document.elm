@@ -28,9 +28,9 @@ module Document exposing
     )
 
 import Ast
-import Cell exposing (Cell)
 import Css exposing (..)
 import Dict as D exposing (Dict)
+import Formula exposing (Formula)
 import Grid exposing (Grid)
 import Html.Styled exposing (..)
 import Html.Styled.Attributes exposing (css)
@@ -51,7 +51,7 @@ type Document
 
 
 type alias DocData =
-    { cells : Dict Types.LocatedName Cell
+    { cells : Dict Types.LocatedName Formula
     , sheets : ZipList ( Types.SheetId, Sheet )
     , sheetIds : Dict Types.Name Types.SheetId
     , nextSheetId : Types.SheetId
@@ -387,12 +387,12 @@ insertHelp cellName value d =
             { d
                 | cells =
                     D.insert ( currentSheetId d, cellName )
-                        (Cell.fromSource (\name -> D.get name d.sheetIds) value)
+                        (Formula.fromSource (\name -> D.get name d.sheetIds) value)
                         d.cells
             }
 
 
-getCell : Types.SheetId -> Types.Name -> DocData -> Result Types.Error Cell
+getCell : Types.SheetId -> Types.Name -> DocData -> Result Types.Error Formula
 getCell sheetId cellName data =
     D.get ( sheetId, cellName ) data.cells
         |> R.fromMaybe (Types.UndefinedGlobalReferenceError ( sheetId, cellName ))
@@ -402,7 +402,7 @@ cellSource : Types.Name -> Document -> Result Types.Error String
 cellSource cellName (Document d) =
     getCell (currentSheetId d) cellName d
         |> R.andThen
-            (Cell.sourceView
+            (Formula.sourceView
                 (\id -> getSheet id d |> Maybe.map sheetName)
                 >> R.fromMaybe (Types.UnexpectedError "Found an orphan sheet id reference")
             )
@@ -428,7 +428,7 @@ evalCell data ancestors cellRef =
 
         go () =
             getCell (T.first cellRef) (T.second cellRef) data
-                |> R.andThen (Cell.eval context)
+                |> R.andThen (Formula.eval context)
     in
     Ast.checkCycle cellRef ancestors go
 

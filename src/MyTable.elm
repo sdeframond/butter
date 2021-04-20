@@ -8,9 +8,9 @@ module MyTable exposing
     )
 
 import Ast
-import Cell exposing (Cell)
 import Css exposing (..)
 import Dict as D exposing (Dict)
+import Formula exposing (Formula)
 import Html.Styled as H
     exposing
         ( Html
@@ -34,16 +34,16 @@ type Table
 
 
 type alias TableData =
-    { fields : List Field
+    { fields : List FieldDefinition
     , rows : List Row
     , state : T.State
     , nextId : Int
     , editedCell : Maybe ( ( Int, String ), String )
-    , newField : Field
+    , newField : FieldDefinition
     }
 
 
-type alias Field =
+type alias FieldDefinition =
     { name : String
     , edit : String
     , fieldType : FieldType
@@ -52,15 +52,15 @@ type alias Field =
 
 type FieldType
     = DataField DataType
-    | FormulaField Cell
+    | FormulaField Formula
 
 
-emptyField : Field
+emptyField : FieldDefinition
 emptyField =
     { name = "", edit = "", fieldType = DataField StringType }
 
 
-isValidField : Field -> Bool
+isValidField : FieldDefinition -> Bool
 isValidField { name, fieldType } =
     name
         /= ""
@@ -68,13 +68,13 @@ isValidField { name, fieldType } =
                 DataField _ ->
                     True
 
-                FormulaField cell ->
-                    Cell.isValid cell
+                FormulaField formula ->
+                    Formula.isValid formula
            )
 
 
 type alias Row =
-    { id : Int, cells : Dict String String }
+    { id : Int, data : Dict String String }
 
 
 type Msg
@@ -123,7 +123,7 @@ updateData getSheetId msg data =
                             L.map
                                 (\row ->
                                     if row.id == rowId then
-                                        { row | cells = D.insert fieldName content row.cells }
+                                        { row | data = D.insert fieldName content row.data }
 
                                     else
                                         row
@@ -159,7 +159,7 @@ updateData getSheetId msg data =
 
                 editsToRow =
                     { id = data.nextId
-                    , cells =
+                    , data =
                         data.fields
                             |> L.map (\f -> ( f.name, f.edit ))
                             |> D.fromList
@@ -211,7 +211,7 @@ updateData getSheetId msg data =
         OnClickRemoveColumnBtn name ->
             { data
                 | fields = L.filter (.name >> (/=) name) data.fields
-                , rows = L.map (\r -> { r | cells = D.remove name r.cells }) data.rows
+                , rows = L.map (\r -> { r | data = D.remove name r.data }) data.rows
             }
 
         OnClickNewFieldTypeBtn ->
@@ -219,7 +219,7 @@ updateData getSheetId msg data =
                 |> (setNewFieldType <|
                         case data.newField.fieldType of
                             DataField _ ->
-                                FormulaField (Cell.fromSource getSheetId "")
+                                FormulaField (Formula.fromSource getSheetId "")
 
                             FormulaField _ ->
                                 DataField StringType
@@ -242,7 +242,7 @@ updateData getSheetId msg data =
                    )
 
         OnInputNewFieldFormula input ->
-            setNewFieldType (FormulaField (Cell.fromSource getSheetId input)) data
+            setNewFieldType (FormulaField (Formula.fromSource getSheetId input)) data
 
 
 view : Config msg -> Table -> Html msg
@@ -288,7 +288,7 @@ tableView config ({ rows, state } as data) =
         [ T.view (sortableTableConfig config data) state rows |> H.fromUnstyled ]
 
 
-newFieldView : Field -> (Types.SheetId -> Maybe Types.Name) -> (Msg -> msg) -> Html msg
+newFieldView : FieldDefinition -> (Types.SheetId -> Maybe Types.Name) -> (Msg -> msg) -> Html msg
 newFieldView newField getSheetName toMsg =
     H.div []
         [ input [ value newField.name, onInput (OnInputNewFieldName >> toMsg) ] []
@@ -301,10 +301,10 @@ newFieldView newField getSheetName toMsg =
                     text "Data"
             ]
         , case newField.fieldType of
-            FormulaField cell ->
+            FormulaField formula ->
                 input
                     [ value
-                        (Cell.sourceView getSheetName cell
+                        (Formula.sourceView getSheetName formula
                             -- This case should be logged elswhere than in a view.
                             -- Here, we show the error loud and clear to prevent
                             -- corrupting more data.
@@ -350,16 +350,16 @@ sortableTableConfig { toMsg, resolveAbsolute } { fields, editedCell } =
         toColumn field =
             T.veryCustomColumn
                 { name = field.name
-                , sorter = T.decreasingOrIncreasingBy (.cells >> D.get field.name >> M.withDefault "")
+                , sorter = T.decreasingOrIncreasingBy (.data >> D.get field.name >> M.withDefault "")
                 , viewData = fieldView field
                 }
 
-        defaultCellView name { id, cells } =
+        defaultFieldView name { id, data } =
             text
                 >> L.singleton
                 >> span
                     [ onClick
-                        (D.get name cells
+                        (D.get name data
                             |> M.withDefault ""
                             |> EditCell id name
                             |> toMsg
@@ -373,7 +373,7 @@ sortableTableConfig { toMsg, resolveAbsolute } { fields, editedCell } =
                 ]
                 []
 
-        fieldView : Field -> Row -> T.HtmlDetails msg
+        fieldView : FieldDefinition -> Row -> T.HtmlDetails msg
         fieldView field row =
             evalField resolveAbsolute fields [] field row
                 |> Types.valueOrErrorToString
@@ -385,10 +385,10 @@ sortableTableConfig { toMsg, resolveAbsolute } { fields, editedCell } =
                                         always (cellInput content)
 
                                     else
-                                        defaultCellView field.name row
+                                        defaultFieldView field.name row
 
                                 Nothing ->
-                                    defaultCellView field.name row
+                                    defaultFieldView field.name row
 
                         FormulaField _ ->
                             text
@@ -426,7 +426,7 @@ eval resolveAbsolute (Table data) =
     }
 
 
-evalField : Resolver -> List Field -> List Types.LocatedName -> Field -> Row -> ValueOrError
+evalField : Resolver -> List FieldDefinition -> List Types.LocatedName -> FieldDefinition -> Row -> ValueOrError
 evalField resolveAbsolute fields ancestors field row =
     let
         resolveRelative : Name -> ValueOrError
@@ -444,7 +444,7 @@ evalField resolveAbsolute fields ancestors field row =
             }
 
         evalDataField dataType =
-            D.get field.name row.cells
+            D.get field.name row.data
                 |> M.withDefault ""
                 |> (case dataType of
                         StringType ->
@@ -467,8 +467,8 @@ evalField resolveAbsolute fields ancestors field row =
                 DataField dataType ->
                     evalDataField dataType
 
-                FormulaField cell ->
-                    Cell.eval context cell
+                FormulaField formula ->
+                    Formula.eval context formula
     in
     Ast.checkCycle fieldRef ancestors go
 
