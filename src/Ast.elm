@@ -1,5 +1,5 @@
-module AST exposing
-    ( AST
+module Ast exposing
+    ( Ast
     , Context
     , checkCycle
     , eval
@@ -19,13 +19,13 @@ import Tuple as T
 import Types exposing (Error(..), Name, Value(..), ValueOrError)
 
 
-type AST sheetRefType
+type Ast sheetRefType
     = RootLiteral Literal
-    | Formula (FormulaAST sheetRefType)
+    | Formula (FormulaAst sheetRefType)
 
 
-type FormulaAST sheetRefType
-    = BinOp BinaryOp (FormulaAST sheetRefType) (FormulaAST sheetRefType)
+type FormulaAst sheetRefType
+    = BinOp BinaryOp (FormulaAst sheetRefType) (FormulaAst sheetRefType)
     | FormulaLiteral Literal
     | LocalReference String
     | GlobalReference sheetRefType String
@@ -45,7 +45,7 @@ type Error
     = Error String (List P.DeadEnd)
 
 
-mapSheetReferences : (sheetRefType1 -> sheetRefType2) -> AST sheetRefType1 -> AST sheetRefType2
+mapSheetReferences : (sheetRefType1 -> sheetRefType2) -> Ast sheetRefType1 -> Ast sheetRefType2
 mapSheetReferences f ast =
     case ast of
         RootLiteral lit ->
@@ -55,7 +55,7 @@ mapSheetReferences f ast =
             Formula (mapSheetReferencesInFormula f formula)
 
 
-mapSheetReferencesInFormula : (sheetRefType1 -> sheetRefType2) -> FormulaAST sheetRefType1 -> FormulaAST sheetRefType2
+mapSheetReferencesInFormula : (sheetRefType1 -> sheetRefType2) -> FormulaAst sheetRefType1 -> FormulaAst sheetRefType2
 mapSheetReferencesInFormula f ast =
     case ast of
         BinOp op x y ->
@@ -71,7 +71,7 @@ mapSheetReferencesInFormula f ast =
             GlobalReference (f sheetRef) cellRef
 
 
-toString : AST (Maybe String) -> Maybe String
+toString : Ast (Maybe String) -> Maybe String
 toString ast =
     case ast of
         Formula ast_ ->
@@ -84,7 +84,7 @@ toString ast =
             Just (S.fromInt i)
 
 
-formulaToString : FormulaAST (Maybe String) -> Maybe String
+formulaToString : FormulaAst (Maybe String) -> Maybe String
 formulaToString ast =
     case ast of
         BinOp op a b ->
@@ -116,7 +116,7 @@ binaryOpToString op =
             "-"
 
 
-parseCell : String -> Result Error (AST String)
+parseCell : String -> Result Error (Ast String)
 parseCell s =
     P.run root s |> R.mapError (Error s)
 
@@ -131,7 +131,7 @@ parseInt str =
     P.run (int |. end) str |> R.mapError (Error str)
 
 
-root : Parser (AST String)
+root : Parser (Ast String)
 root =
     let
         var =
@@ -163,14 +163,14 @@ name =
         }
 
 
-reference : Parser (FormulaAST String)
+reference : Parser (FormulaAst String)
 reference =
     succeed identity
         |= name
         |> P.andThen referenceHelp
 
 
-referenceHelp : String -> Parser (FormulaAST String)
+referenceHelp : String -> Parser (FormulaAst String)
 referenceHelp str =
     oneOf
         [ succeed (GlobalReference str)
@@ -190,7 +190,7 @@ int =
         ]
 
 
-term : Parser (FormulaAST String)
+term : Parser (FormulaAst String)
 term =
     succeed identity
         |= oneOf
@@ -204,12 +204,12 @@ term =
         |. spaces
 
 
-expression : Parser (FormulaAST String)
+expression : Parser (FormulaAst String)
 expression =
     term |> P.andThen (expressionHelp [])
 
 
-expressionHelp : List ( BinaryOp, FormulaAST String ) -> FormulaAST String -> Parser (FormulaAST String)
+expressionHelp : List ( BinaryOp, FormulaAst String ) -> FormulaAst String -> Parser (FormulaAst String)
 expressionHelp reversedOps expr =
     oneOf
         [ succeed T.pair
@@ -230,7 +230,7 @@ operator =
         ]
 
 
-finalize : List ( BinaryOp, FormulaAST String ) -> FormulaAST String -> FormulaAST String
+finalize : List ( BinaryOp, FormulaAst String ) -> FormulaAst String -> FormulaAst String
 finalize reversedOps finalExpr =
     case reversedOps of
         [] ->
@@ -255,7 +255,7 @@ checkCycle path ancestors doEval =
         doEval ()
 
 
-eval : Context sheetRefType -> AST sheetRefType -> ValueOrError
+eval : Context sheetRefType -> Ast sheetRefType -> ValueOrError
 eval context ast =
     case ast of
         RootLiteral lit ->
@@ -275,7 +275,7 @@ evalLiteral lit =
             IntValue i
 
 
-evalFormula : Context sheetRefType -> FormulaAST sheetRefType -> ValueOrError
+evalFormula : Context sheetRefType -> FormulaAst sheetRefType -> ValueOrError
 evalFormula context formulaAst =
     let
         intBinaryOperator op errMsg x y =

@@ -27,7 +27,7 @@ module Document exposing
     , view
     )
 
-import AST
+import Ast
 import Cell exposing (Cell)
 import Css exposing (..)
 import Dict as D exposing (Dict)
@@ -240,7 +240,7 @@ renameSheet sheetId newName (Document data) =
         Err (Types.DuplicateSheetNameError newName)
 
     else
-        AST.parseName newName
+        Ast.parseName newName
             |> R.mapError (always Types.InvalidSheetNameError)
             |> R.andThen
                 (\validNewName ->
@@ -430,7 +430,7 @@ evalCell data ancestors cellRef =
             getCell (T.first cellRef) (T.second cellRef) data
                 |> R.andThen (Cell.eval context)
     in
-    AST.checkCycle cellRef ancestors go
+    Ast.checkCycle cellRef ancestors go
 
 
 

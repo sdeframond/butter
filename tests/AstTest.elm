@@ -1,6 +1,6 @@
 module AstTest exposing (..)
 
-import AST
+import Ast
 import Expect
 import List as L
 import Test exposing (..)
@@ -25,16 +25,16 @@ suite =
 
         evalString : String -> Types.ValueOrError
         evalString input =
-            AST.parseCell input
+            Ast.parseCell input
                 |> Result.mapError (always Types.ParsingError)
-                |> Result.andThen (AST.eval mockContext)
+                |> Result.andThen (Ast.eval mockContext)
 
         toString : (String -> Maybe String) -> String -> Maybe String
         toString tag input =
-            AST.parseCell input
+            Ast.parseCell input
                 |> Result.toMaybe
-                |> Maybe.map (AST.mapSheetReferences tag)
-                |> Maybe.andThen AST.toString
+                |> Maybe.map (Ast.mapSheetReferences tag)
+                |> Maybe.andThen Ast.toString
     in
     describe "AST"
         -- TODO: add fuzzing when it will be possible to make advanced string fuzzers.
@@ -54,7 +54,7 @@ suite =
                 , ( "local ref, special case E1", "=E1", Ok (IntValue 1338) )
                 ]
         , describe "parseName" <|
-            testCollection AST.parseName
+            testCollection Ast.parseName
                 [ ( "valid name", "foo123", Ok "foo123" )
 
                 --, ( "invalid name", "foo bar", Err (Error "foo bar" [ { col = 4, problem = ExpectingEnd, row = 1 } ]) )

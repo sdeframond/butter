@@ -7,7 +7,7 @@ module MyTable exposing
     , view
     )
 
-import AST
+import Ast
 import Cell exposing (Cell)
 import Css exposing (..)
 import Dict as D exposing (Dict)
@@ -437,7 +437,7 @@ evalField resolveAbsolute fields ancestors field row =
                 |> Result.fromMaybe (Types.UndefinedLocalReferenceError name)
                 |> Result.andThen (\f -> evalField resolveAbsolute fields (fieldRef :: ancestors) f row)
 
-        context : AST.Context Types.SheetId
+        context : Ast.Context Types.SheetId
         context =
             { resolveGlobalReference = resolveAbsolute
             , resolveLocalReference = resolveRelative
@@ -451,7 +451,7 @@ evalField resolveAbsolute fields ancestors field row =
                             Types.StringValue >> Ok
 
                         IntType ->
-                            AST.parseInt
+                            Ast.parseInt
                                 >> Result.mapError (always Types.ParsingError)
                                 >> Result.map Types.IntValue
                    )
@@ -470,7 +470,7 @@ evalField resolveAbsolute fields ancestors field row =
                 FormulaField cell ->
                     Cell.eval context cell
     in
-    AST.checkCycle fieldRef ancestors go
+    Ast.checkCycle fieldRef ancestors go
 
 
 tfoot toMsg fields =
