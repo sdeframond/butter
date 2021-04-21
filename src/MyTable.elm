@@ -332,20 +332,22 @@ addPivotTableButton makePivotTableMsg =
     H.button [ onClick makePivotTableMsg ] [ text "Make PivotTable" ]
 
 
-type alias Resolver =
-    Types.LocatedName -> ValueOrError
+type alias Context =
+    { resolveAbsolute : Types.LocatedName -> List Types.LocatedName -> ValueOrError
+    , prefix : Types.SheetId
+    }
 
 
 type alias Config msg =
     { toMsg : Msg -> msg
-    , resolveAbsolute : Resolver
+    , context : Context
     , getSheetName : Types.SheetId -> Maybe Types.Name
     , makePivotTableMsg : msg
     }
 
 
 sortableTableConfig : Config msg -> TableData -> T.Config Row msg
-sortableTableConfig { toMsg, resolveAbsolute } { fields, editedCell } =
+sortableTableConfig { toMsg, context } { fields, editedCell } =
     let
         toColumn field =
             T.veryCustomColumn
@@ -375,7 +377,7 @@ sortableTableConfig { toMsg, resolveAbsolute } { fields, editedCell } =
 
         fieldView : FieldDefinition -> Row -> T.HtmlDetails msg
         fieldView field row =
-            evalField resolveAbsolute fields [] field row
+            evalField context fields [] field row
                 |> Types.valueOrErrorToString
                 |> (case field.fieldType of
                         DataField _ ->
@@ -413,12 +415,12 @@ sortableTableConfig { toMsg, resolveAbsolute } { fields, editedCell } =
         }
 
 
-eval : Resolver -> Table -> Types.Table
-eval resolveAbsolute (Table data) =
+eval : Context -> Table -> Types.Table
+eval context (Table data) =
     let
         evalRow row =
             data.fields
-                |> L.map (\f -> ( f.name, evalField resolveAbsolute data.fields [] f row ))
+                |> L.map (\f -> ( f.name, evalField context data.fields [] f row ))
                 |> D.fromList
     in
     { fields = data.fields |> List.map .name
@@ -426,21 +428,23 @@ eval resolveAbsolute (Table data) =
     }
 
 
-evalField : Resolver -> List FieldDefinition -> List Types.LocatedName -> FieldDefinition -> Row -> ValueOrError
-evalField resolveAbsolute fields ancestors field row =
+evalField : Context -> List FieldDefinition -> List Types.LocatedName -> FieldDefinition -> Row -> ValueOrError
+evalField ({ resolveAbsolute, prefix } as context) fields ancestors field row =
     let
-        resolveRelative : Name -> ValueOrError
-        resolveRelative name =
+        resolveRelative : Types.Name -> List ( Types.SheetId, Types.Name ) -> ValueOrError
+        resolveRelative name ancestors_ =
             fields
                 |> L.filter (.name >> (==) name)
                 |> L.head
                 |> Result.fromMaybe (Types.UndefinedLocalReferenceError name)
-                |> Result.andThen (\f -> evalField resolveAbsolute fields (fieldRef :: ancestors) f row)
+                |> Result.andThen (\f -> evalField context fields ancestors_ f row)
 
-        context : Ast.Context Types.SheetId
-        context =
+        astContext : Ast.Context Types.SheetId
+        astContext =
             { resolveGlobalReference = resolveAbsolute
             , resolveLocalReference = resolveRelative
+            , prefix = prefix
+            , ancestors = ancestors
             }
 
         evalDataField dataType =
@@ -455,22 +459,13 @@ evalField resolveAbsolute fields ancestors field row =
                                 >> Result.mapError (always Types.ParsingError)
                                 >> Result.map Types.IntValue
                    )
-
-        fieldRef =
-            ( -1
-              -- TODO find a better way to reference local values.
-            , field.name
-            )
-
-        go () =
-            case field.fieldType of
-                DataField dataType ->
-                    evalDataField dataType
-
-                FormulaField formula ->
-                    Formula.eval context formula
     in
-    Ast.checkCycle fieldRef ancestors go
+    case field.fieldType of
+        DataField dataType ->
+            evalDataField dataType
+
+        FormulaField formula ->
+            Formula.eval astContext formula
 
 
 tfoot toMsg fields =

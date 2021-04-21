@@ -64,17 +64,6 @@ fromSource getSheetId src =
 
 eval : Ast.Context Types.SheetId -> Formula -> Types.ValueOrError
 eval context (Formula _ astResult) =
-    let
-        myContext : Ast.Context (Result OriginalSheetName Types.SheetId)
-        myContext =
-            { resolveLocalReference = context.resolveLocalReference
-            , resolveGlobalReference = resolveGlobalReference
-            }
-
-        resolveGlobalReference : ( Result OriginalSheetName Types.SheetId, Types.Name ) -> Types.ValueOrError
-        resolveGlobalReference ( sheetRefIdOrSource, cellRef ) =
-            sheetRefIdOrSource
-                |> Result.mapError Types.UndefinedSheetError
-                |> Result.andThen (\id -> context.resolveGlobalReference ( id, cellRef ))
-    in
-    astResult |> Result.andThen (Ast.eval myContext)
+    astResult
+        |> Result.andThen (Ast.filterMapReferences (\r -> Result.mapError Types.UndefinedSheetError r))
+        |> Result.andThen (Ast.eval context)

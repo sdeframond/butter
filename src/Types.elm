@@ -82,7 +82,7 @@ valueOrErrorToString val =
     case val of
         Err e ->
             case e of
-                UndefinedGlobalReferenceError _ ->
+                UndefinedLocalReferenceError _ ->
                     ""
 
                 r ->

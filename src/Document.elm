@@ -3,17 +3,9 @@ module Document exposing
     , Msg
     , Position(..)
     , Sheet(..)
-    , cellSource
     , commitEdit
-    ,  getValue
-       -- only used for testing
-
     , gridSheet
     , init
-    ,  insertCellSource
-       -- Not used but useful for testing.
-       -- TODO: find a way to test without it.
-
     , insertSheet
     , pivotTableSheet
     , removeSheet
@@ -30,7 +22,6 @@ module Document exposing
 import Ast
 import Css exposing (..)
 import Dict as D exposing (Dict)
-import Formula exposing (Formula)
 import Grid exposing (Grid)
 import Html.Styled exposing (..)
 import Html.Styled.Attributes exposing (css)
@@ -51,11 +42,23 @@ type Document
 
 
 type alias DocData =
-    { cells : Dict Types.LocatedName Formula
-    , sheets : ZipList ( Types.SheetId, Sheet )
+    { sheets : ZipList ( Types.SheetId, Sheet )
     , sheetIds : Dict Types.Name Types.SheetId
     , nextSheetId : Types.SheetId
     }
+
+
+
+-- INIT
+
+
+init : Sheet -> Document
+init sheet =
+    Document
+        { sheets = ZL.singleton ( 0, sheet )
+        , sheetIds = D.fromList [ ( sheetName sheet, 0 ) ]
+        , nextSheetId = 1
+        }
 
 
 
@@ -145,6 +148,11 @@ getSheet sheetId data =
         |> Maybe.map T.second
 
 
+getSheetName : DocData -> Types.SheetId -> Maybe Types.Name
+getSheetName data sheetId =
+    getSheet sheetId data |> Maybe.map sheetName
+
+
 insertSheet : Sheet -> Document -> Result Types.Error Document
 insertSheet sheet (Document data) =
     insertSheetHelp sheet data |> R.map Document
@@ -183,9 +191,7 @@ removeSheet sheetId (Document d) =
                     { newSheets =
                         ZL.filter (T.first >> (/=) sheetId) d.sheets
                             |> Maybe.withDefault d.sheets
-                    , maybeSheetName =
-                        getSheet sheetId d
-                            |> Maybe.map sheetName
+                    , maybeSheetName = getSheetName d sheetId
                     }
 
             else
@@ -201,7 +207,6 @@ removeSheet sheetId (Document d) =
                             maybeSheetName
                                 |> Maybe.map (\name -> D.remove name d.sheetIds)
                                 |> Maybe.withDefault d.sheetIds
-                        , cells = d.cells |> D.filter (\( id, _ ) _ -> id /= sheetId)
                     }
             )
 
@@ -244,8 +249,8 @@ renameSheet sheetId newName (Document data) =
             |> R.mapError (always Types.InvalidSheetNameError)
             |> R.andThen
                 (\validNewName ->
-                    getSheet sheetId data
-                        |> Maybe.map (sheetName >> T.pair validNewName)
+                    getSheetName data sheetId
+                        |> Maybe.map (T.pair validNewName)
                         |> R.fromMaybe (Types.UnexpectedError ("Invalid SheetId: " ++ String.fromInt sheetId))
                 )
             |> R.map updateSheetName
@@ -291,13 +296,13 @@ updateData msg data =
             }
     in
     case ( msg, currentSheet data ) of
-        ( GridMsg gridMsg, GridSheet _ grid ) ->
-            ( updateGrid (Grid.update gridMsg grid) data
+        ( GridMsg gridMsg, GridSheet name grid ) ->
+            ( updateSheet (GridSheet name <| Grid.update (getSheetId data) gridMsg grid) data
             , Cmd.none
             )
 
         ( TableMsg tableMsg, TableSheet name table ) ->
-            ( updateSheet (TableSheet name <| Table.update (\n -> D.get n data.sheetIds) tableMsg table) data
+            ( updateSheet (TableSheet name <| Table.update (getSheetId data) tableMsg table) data
             , Cmd.none
             )
 
@@ -312,10 +317,15 @@ updateData msg data =
 
         ( MakePivotTable, TableSheet _ table ) ->
             let
+                context =
+                    { resolveAbsolute = eval data
+                    , prefix = currentSheetId data
+                    }
+
                 newSheet =
                     pivotTableSheet
                         ("PT" ++ String.fromInt data.nextSheetId)
-                        (Table.eval (evalCell data []) table)
+                        (Table.eval context table)
             in
             ( insertSheetHelp newSheet data
                 |> Result.withDefault data
@@ -330,107 +340,48 @@ commitEdit : Document -> Document
 commitEdit (Document data) =
     Document <|
         case currentSheet data of
-            GridSheet _ grid ->
-                updateGrid (Grid.commit grid) data
+            GridSheet name grid ->
+                { data | sheets = ZL.setCurrent ( currentSheetId data, GridSheet name (Grid.commit (getSheetId data) grid) ) data.sheets }
 
             _ ->
                 data
 
 
-updateGrid : ( Grid, Grid.Cmd ) -> DocData -> DocData
-updateGrid ( newGrid, gridCmd ) data =
-    let
-        newItem =
-            ( currentSheetId data, GridSheet (currentSheetName data) newGrid )
-
-        newData =
-            { data | sheets = ZL.setCurrent newItem data.sheets }
-    in
-    case gridCmd of
-        Grid.NoCmd ->
-            newData
-
-        Grid.CommitChangesCmd cellName content ->
-            insertHelp cellName content newData
+getSheetId : DocData -> Types.Name -> Maybe Types.SheetId
+getSheetId data name =
+    D.get name data.sheetIds
 
 
 
--- INIT
+-- EVAL
 
 
-init : Sheet -> Document
-init sheet =
-    Document
-        { cells = D.empty
-        , sheets = ZL.singleton ( 0, sheet )
-        , sheetIds = D.fromList [ ( sheetName sheet, 0 ) ]
-        , nextSheetId = 1
-        }
-
-
-
--- GRID CELLS
-
-
-insertCellSource : Types.Name -> String -> Document -> Document
-insertCellSource cellName value (Document data) =
-    Document <| insertHelp cellName value data
-
-
-insertHelp : Types.Name -> String -> DocData -> DocData
-insertHelp cellName value d =
-    case value of
-        "" ->
-            { d | cells = D.remove ( currentSheetId d, cellName ) d.cells }
-
-        _ ->
-            { d
-                | cells =
-                    D.insert ( currentSheetId d, cellName )
-                        (Formula.fromSource (\name -> D.get name d.sheetIds) value)
-                        d.cells
-            }
-
-
-getCell : Types.SheetId -> Types.Name -> DocData -> Result Types.Error Formula
-getCell sheetId cellName data =
-    D.get ( sheetId, cellName ) data.cells
-        |> R.fromMaybe (Types.UndefinedGlobalReferenceError ( sheetId, cellName ))
-
-
-cellSource : Types.Name -> Document -> Result Types.Error String
-cellSource cellName (Document d) =
-    getCell (currentSheetId d) cellName d
-        |> R.andThen
-            (Formula.sourceView
-                (\id -> getSheet id d |> Maybe.map sheetName)
-                >> R.fromMaybe (Types.UnexpectedError "Found an orphan sheet id reference")
+eval : DocData -> Types.LocatedName -> List Types.LocatedName -> Types.ValueOrError
+eval data ( sheetId, ref ) ancestors =
+    getSheet sheetId data
+        |> Result.fromMaybe
+            (getSheetName data sheetId
+                |> Maybe.map Types.UndefinedSheetError
+                |> Maybe.withDefault (Types.UnexpectedError "Found an orphan sheet")
             )
+        |> Result.andThen
+            (\sheet ->
+                case sheet of
+                    GridSheet _ grid ->
+                        let
+                            context : Ast.Context Types.SheetId
+                            context =
+                                { ancestors = ancestors
+                                , prefix = sheetId
+                                , resolveGlobalReference = eval data
+                                , resolveLocalReference = \cellRef -> eval data ( sheetId, cellRef )
+                                }
+                        in
+                        Grid.evalCell grid context ( sheetId, ref )
 
-
-getValue : Types.Name -> Document -> Types.ValueOrError
-getValue name (Document data) =
-    evalCell data [] ( currentSheetId data, name )
-
-
-evalCell : DocData -> List Types.LocatedName -> Types.LocatedName -> Types.ValueOrError
-evalCell data ancestors cellRef =
-    let
-        resolveAbsolute =
-            evalCell data (cellRef :: ancestors)
-
-        context =
-            { resolveGlobalReference = resolveAbsolute
-            , resolveLocalReference =
-                \relativeName ->
-                    resolveAbsolute ( T.first cellRef, relativeName )
-            }
-
-        go () =
-            getCell (T.first cellRef) (T.second cellRef) data
-                |> R.andThen (Formula.eval context)
-    in
-    Ast.checkCycle cellRef ancestors go
+                    _ ->
+                        Err (Types.TypeError "Only grids can be referenced for now")
+            )
 
 
 
@@ -442,21 +393,27 @@ type alias Config msg =
 
 
 view : Config msg -> Document -> Html msg
-view { toMsg } ((Document data) as doc) =
+view { toMsg } (Document data) =
     let
-        gridConfig =
+        gridConfig sheetId =
             { toMsg = GridMsg >> toMsg
-            , getCellValue = \name -> getValue name doc
-            , getCellSource = \name -> cellSource name doc |> R.withDefault ""
+            , getSheetName = getSheetName data
+            , context =
+                { prefix = sheetId
+                , ancestors = []
+                , resolveGlobalReference = eval data
+                , resolveLocalReference = \cellRef -> eval data ( sheetId, cellRef )
+                }
             }
 
-        tableConfig =
+        tableConfig sheetId =
             { toMsg = TableMsg >> toMsg
-            , resolveAbsolute =
-                \name ->
-                    evalCell data [] name
-            , getSheetName = \id -> getSheet id data |> Maybe.map sheetName
+            , getSheetName = getSheetName data
             , makePivotTableMsg = MakePivotTable |> toMsg
+            , context =
+                { prefix = sheetId
+                , resolveAbsolute = eval data
+                }
             }
     in
     div
@@ -466,13 +423,13 @@ view { toMsg } ((Document data) as doc) =
             , overflow auto
             ]
         ]
-        [ case ZL.current data.sheets |> T.second of
-            GridSheet _ grid ->
-                Grid.view gridConfig grid
+        [ case ZL.current data.sheets of
+            ( id, GridSheet _ grid ) ->
+                Grid.view (gridConfig id) grid
 
-            TableSheet _ table ->
-                Table.view tableConfig table
+            ( id, TableSheet _ table ) ->
+                Table.view (tableConfig id) table
 
-            PivotTableSheet _ pt ->
+            ( _, PivotTableSheet _ pt ) ->
                 MyPivotTable.view (PivotTableMsg >> toMsg) pt
         ]

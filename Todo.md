@@ -1,34 +1,6 @@
-Todo
-====
-
-- Feature : explicitely type grid cells (similar to table fields)
-- Feature : Save to file (and load file)
-- Feature : Local storage
-- Feature : Common look for Grid, Table and PivotTable
-- Feature : Functions (which ones ?)
-- Feature : Edit table field definition
-- Feature : add more aggregate functions to Pivot Tables
-- Feature : Cancel cell edition with Echap
-- Feature : Cancel sheet edition with Echap
-- Feature : CSV import
-- Feature : Copy/paste (bonus : support copy-pasting from Excel)
-- Feature : More operators (* , ^, /, unary +, ++ on strings) and parenthesis 
-- Feature : automatically update a pivot table when its source change (dat and fields)
-- Feature : Support large sheets (#row and col > 1_000_000)
-- Feature : Re-order sheets
-- Feature : Support floating precision numbers
-
-- Refactor : Move sheet selection and edition into Document (maybe ?)
-- Enabler : Test coverage
-    - Tried on Apr. 5, does not work out of the box.
-- Debt : fork elm-pivot-table to remove dependency to elm-ui.
-- Enabler : Move all modules under "Butter" namespace to prevent conflits with dependencies (eg. Table, PivotTable...)
-
-Doing
-=====
 
 Notes
------
+=====
 
 Table cell:
     - either a literal value
@@ -45,10 +17,40 @@ Grid ranges :
 Table ranges :
     - Syntax : `MyTable.MyColumn`
 
+Todo
+====
+
+- Feature : explicitely type grid cells (similar to table fields)
+- Refactor : Move sheet selection and edition next to where the data is defined (maybe into Document ?)
+- Feature : Save to file (and load file)
+- Feature : Local storage
+- Feature : Common look for Grid, Table and PivotTable
+- Feature : Functions (which ones ?)
+- Feature : Edit table field definition
+- Feature : add more aggregate functions to Pivot Tables
+- Feature : Cancel cell edition with Echap
+- Feature : Cancel sheet edition with Echap
+- Feature : CSV import
+- Feature : Copy/paste (bonus : support copy-pasting from Excel)
+- Feature : More operators (* , ^, /, unary +, ++ on strings) and parenthesis 
+- Feature : automatically update a pivot table when its source change (dat and fields)
+- Feature : Support large sheets (#row and col > 1_000_000)
+- Feature : Re-order sheets
+- Feature : Support floating precision numbers
+
+- Enabler : Test coverage
+    - Tried on Apr. 5, does not work out of the box.
+- Debt : fork elm-pivot-table to remove dependency to elm-ui.
+- Enabler : Move all modules under "Butter" namespace to prevent conflits with dependencies (eg. Table, PivotTable...)
+
+Doing
+=====
+
 
 Done
 ====
 
+- 2021-04-21 - Refactor : Move grid sheet's data into the GridSheet itself.
 - 2021-04-17 - Feature : Pivot tables
 - 2021-04-17 - Enabler : Use IDs instead of name in references
 - 2021-03-28 - Feature : Formulas in tables

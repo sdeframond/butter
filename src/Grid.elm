@@ -1,37 +1,70 @@
-module Grid exposing (Cmd(..), Config, Grid, Msg, commit, init, update, view)
+module Grid exposing (Config, Grid, Msg, commit, evalCell, init, update, view)
 
+import Ast
 import Css exposing (..)
-import Types exposing (Error(..), Name, Value(..), ValueOrError)
+import Dict exposing (Dict)
+import Formula exposing (Formula)
 import Html.Styled as H exposing (..)
 import Html.Styled.Attributes exposing (css, value)
 import Html.Styled.Events exposing (onClick, onInput)
 import List as L
 import String as S
+import Types exposing (Error(..), Name, Value(..))
+
+
+
+-- MODEL
 
 
 type Grid
-    = Grid EditState
+    = Grid GridData
 
 
-type alias EditState =
-    Maybe ( Name, String )
+type alias GridData =
+    { editState : Maybe ( Name, String )
+    , cells : Dict Types.Name Formula
+    }
 
 
 type alias Config msg =
     { toMsg : Msg -> msg
-    , getCellValue : Name -> ValueOrError
-    , getCellSource : Name -> String
+    , getSheetName : Types.SheetId -> Maybe Types.Name
+    , context : Ast.Context Types.SheetId
     }
+
+
+
+--INIT
 
 
 init : Grid
 init =
-    Grid Nothing
+    Grid { editState = Nothing, cells = Dict.empty }
 
 
-type Cmd
-    = NoCmd
-    | CommitChangesCmd String String
+
+--CELL HELPERS
+
+
+evalCell : Grid -> Ast.Context Types.SheetId -> Types.LocatedName -> Types.ValueOrError
+evalCell (Grid data) =
+    evalCell_ data
+
+
+evalCell_ : GridData -> Ast.Context Types.SheetId -> Types.LocatedName -> Types.ValueOrError
+evalCell_ data context cellRef =
+    getCell (Tuple.second cellRef) data
+        |> Result.andThen (Formula.eval context)
+
+
+getCell : Types.Name -> GridData -> Result Types.Error Formula
+getCell cellName data =
+    Dict.get cellName data.cells
+        |> Result.fromMaybe (Types.UndefinedLocalReferenceError cellName)
+
+
+
+-- UPDATE
 
 
 type Msg
@@ -39,37 +72,63 @@ type Msg
     | UpdateEdit String String
 
 
-update : Msg -> Grid -> ( Grid, Cmd )
-update msg (Grid editState) =
+update : (Name -> Maybe Types.SheetId) -> Msg -> Grid -> Grid
+update getSheetId msg (Grid data) =
     case msg of
         UpdateEdit name content ->
-            ( Grid (Just ( name, content )), NoCmd )
+            Grid { data | editState = Just ( name, content ) }
 
         StartEditing name content ->
-            ( Grid (Just ( name, content ))
-            , case editState of
-                Nothing ->
-                    NoCmd
+            let
+                newData =
+                    commitData getSheetId data
+            in
+            Grid { newData | editState = Just ( name, content ) }
 
-                Just ( oldName, oldContent ) ->
-                    CommitChangesCmd oldName oldContent
+
+
+-- COMMIT
+
+
+commit : (Name -> Maybe Types.SheetId) -> Grid -> Grid
+commit getSheetId (Grid data) =
+    commitData getSheetId data |> Grid
+
+
+commitData : (Name -> Maybe Types.SheetId) -> GridData -> GridData
+commitData getSheetId data =
+    let
+        insertSource cellName input =
+            case input of
+                "" ->
+                    { data | cells = Dict.remove cellName data.cells }
+
+                _ ->
+                    { data
+                        | cells =
+                            Dict.insert cellName
+                                (Formula.fromSource getSheetId input)
+                                data.cells
+                    }
+    in
+    data.editState
+        |> Maybe.map
+            (\( name, input ) ->
+                let
+                    newData =
+                        insertSource name input
+                in
+                { newData | editState = Nothing }
             )
+        |> Maybe.withDefault data
 
 
-commit : Grid -> ( Grid, Cmd )
-commit (Grid editState) =
-    ( init
-    , case editState of
-        Nothing ->
-            NoCmd
 
-        Just ( name, content ) ->
-            CommitChangesCmd name content
-    )
+-- VIEW
 
 
 view : Config msg -> Grid -> Html msg
-view { toMsg, getCellSource, getCellValue } (Grid editState) =
+view { toMsg, getSheetName, context } (Grid ({ editState } as data)) =
     let
         numberOfRow =
             40
@@ -103,6 +162,13 @@ view { toMsg, getCellSource, getCellValue } (Grid editState) =
         rowHeader row =
             myTh [ css [ left (px 0), position sticky ] ] [ text <| S.fromInt row ]
 
+        cellSource cellName =
+            getCell cellName data
+                |> Result.andThen
+                    (Formula.sourceView getSheetName
+                        >> Result.fromMaybe (Types.UnexpectedError "Found an orphan sheet id reference")
+                    )
+
         cell row col =
             let
                 cellName =
@@ -112,9 +178,13 @@ view { toMsg, getCellSource, getCellValue } (Grid editState) =
                 defaultCellView =
                     td
                         [ cellCss
-                        , onClick <| toMsg <| StartEditing cellName (getCellSource cellName)
+                        , cellSource cellName
+                            |> Result.withDefault ""
+                            |> StartEditing cellName
+                            |> toMsg
+                            |> onClick
                         ]
-                        [ getCellValue cellName
+                        [ evalCell_ data context ( context.prefix, cellName )
                             |> Types.valueOrErrorToString
                             |> text
                         ]

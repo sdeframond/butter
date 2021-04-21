@@ -1,8 +1,8 @@
 module Ast exposing
     ( Ast
     , Context
-    , checkCycle
     , eval
+    , filterMapReferences
     , mapSheetReferences
     , parseCell
     , parseInt
@@ -17,6 +17,10 @@ import Set
 import String as S
 import Tuple as T
 import Types exposing (Error(..), Name, Value(..), ValueOrError)
+
+
+
+-- MODEL
 
 
 type Ast sheetRefType
@@ -45,6 +49,10 @@ type Error
     = Error String (List P.DeadEnd)
 
 
+
+-- MAP
+
+
 mapSheetReferences : (sheetRefType1 -> sheetRefType2) -> Ast sheetRefType1 -> Ast sheetRefType2
 mapSheetReferences f ast =
     case ast of
@@ -69,6 +77,37 @@ mapSheetReferencesInFormula f ast =
 
         GlobalReference sheetRef cellRef ->
             GlobalReference (f sheetRef) cellRef
+
+
+filterMapReferences : (sheetRefType1 -> Result x sheetRefType2) -> Ast sheetRefType1 -> Result x (Ast sheetRefType2)
+filterMapReferences fn ast =
+    case ast of
+        RootLiteral lit ->
+            Ok (RootLiteral lit)
+
+        Formula formula ->
+            filterMapReferencesInFormula fn formula |> Result.map Formula
+
+
+filterMapReferencesInFormula : (sheetRefType1 -> Result x sheetRefType2) -> FormulaAst sheetRefType1 -> Result x (FormulaAst sheetRefType2)
+filterMapReferencesInFormula fn ast =
+    case ast of
+        BinOp op x y ->
+            Result.map2 (BinOp op) (filterMapReferencesInFormula fn x) (filterMapReferencesInFormula fn y)
+
+        FormulaLiteral lit ->
+            Ok (FormulaLiteral lit)
+
+        LocalReference cellRef ->
+            Ok (LocalReference cellRef)
+
+        GlobalReference sheetRef cellRef ->
+            fn sheetRef
+                |> Result.map (\newRef -> GlobalReference newRef cellRef)
+
+
+
+-- TO STRING
 
 
 toString : Ast (Maybe String) -> Maybe String
@@ -114,6 +153,10 @@ binaryOpToString op =
 
         MinusOp ->
             "-"
+
+
+
+-- PARSE
 
 
 parseCell : String -> Result Error (Ast String)
@@ -240,22 +283,19 @@ finalize reversedOps finalExpr =
             BinOp op (finalize previousOps expr) finalExpr
 
 
+
+-- EVAL
+
+
 type alias Context sheetRefType =
-    { resolveGlobalReference : ( sheetRefType, Name ) -> ValueOrError
-    , resolveLocalReference : Name -> ValueOrError
+    { resolveGlobalReference : ( sheetRefType, Name ) -> List ( sheetRefType, Name ) -> ValueOrError
+    , resolveLocalReference : Name -> List ( sheetRefType, Name ) -> ValueOrError
+    , prefix : sheetRefType
+    , ancestors : List ( sheetRefType, Name )
     }
 
 
-checkCycle : Types.LocatedName -> List Types.LocatedName -> (() -> ValueOrError) -> ValueOrError
-checkCycle path ancestors doEval =
-    if L.member path ancestors then
-        Err (CyclicReferenceError ancestors)
-
-    else
-        doEval ()
-
-
-eval : Context sheetRefType -> Ast sheetRefType -> ValueOrError
+eval : Context Types.SheetId -> Ast Types.SheetId -> ValueOrError
 eval context ast =
     case ast of
         RootLiteral lit ->
@@ -275,7 +315,7 @@ evalLiteral lit =
             IntValue i
 
 
-evalFormula : Context sheetRefType -> FormulaAst sheetRefType -> ValueOrError
+evalFormula : Context Types.SheetId -> FormulaAst Types.SheetId -> ValueOrError
 evalFormula context formulaAst =
     let
         intBinaryOperator op errMsg x y =
@@ -298,6 +338,13 @@ evalFormula context formulaAst =
                     R.map2 f a b |> R.andThen identity
             in
             andThen2 applyOp xRes yRes
+
+        checkCycle path ancestors doEval =
+            if L.member path ancestors then
+                Err (CyclicReferenceError ancestors)
+
+            else
+                doEval (path :: ancestors)
     in
     case formulaAst of
         FormulaLiteral lit ->
@@ -312,7 +359,11 @@ evalFormula context formulaAst =
                     intBinaryOperator (-) "(-) works only on IntValue" x y
 
         LocalReference cellName ->
-            context.resolveLocalReference cellName
+            checkCycle ( context.prefix, cellName )
+                context.ancestors
+                (context.resolveLocalReference cellName)
 
-        GlobalReference sheetName cellName ->
-            context.resolveGlobalReference ( sheetName, cellName )
+        GlobalReference sheetRef cellName ->
+            checkCycle ( sheetRef, cellName )
+                context.ancestors
+                (context.resolveGlobalReference ( sheetRef, cellName ))
