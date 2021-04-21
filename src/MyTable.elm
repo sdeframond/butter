@@ -29,6 +29,10 @@ import Table as T exposing (defaultCustomizations)
 import Types exposing (DataType(..), Error(..), Name, ValueOrError)
 
 
+
+-- MODEL
+
+
 type Table
     = Table TableData
 
@@ -41,6 +45,18 @@ type alias TableData =
     , editedCell : Maybe ( ( Int, String ), String )
     , newField : FieldDefinition
     }
+
+
+empty : Table
+empty =
+    Table
+        { fields = []
+        , rows = []
+        , state = T.initialSort ""
+        , nextId = 1
+        , editedCell = Nothing
+        , newField = emptyField
+        }
 
 
 type alias FieldDefinition =
@@ -77,6 +93,10 @@ type alias Row =
     { id : Int, data : Dict String String }
 
 
+
+--UPDATE
+
+
 type Msg
     = SetTableState T.State
     | UpdateNewRowField Name String
@@ -89,18 +109,6 @@ type Msg
     | OnClickNewFieldTypeBtn
     | OnClickNewFieldDataTypeBtn
     | OnInputNewFieldFormula String
-
-
-empty : Table
-empty =
-    Table
-        { fields = []
-        , rows = []
-        , state = T.initialSort ""
-        , nextId = 1
-        , editedCell = Nothing
-        , newField = emptyField
-        }
 
 
 update : (Types.Name -> Maybe Types.SheetId) -> Msg -> Table -> Table
@@ -243,6 +251,10 @@ updateData getSheetId msg data =
 
         OnInputNewFieldFormula input ->
             setNewFieldType (FormulaField (Formula.fromSource getSheetId input)) data
+
+
+
+-- VIEW
 
 
 view : Config msg -> Table -> Html msg
@@ -415,59 +427,6 @@ sortableTableConfig { toMsg, context } { fields, editedCell } =
         }
 
 
-eval : Context -> Table -> Types.Table
-eval context (Table data) =
-    let
-        evalRow row =
-            data.fields
-                |> L.map (\f -> ( f.name, evalField context data.fields [] f row ))
-                |> D.fromList
-    in
-    { fields = data.fields |> List.map .name
-    , rows = data.rows |> L.map evalRow
-    }
-
-
-evalField : Context -> List FieldDefinition -> List Types.LocatedName -> FieldDefinition -> Row -> ValueOrError
-evalField ({ resolveAbsolute, prefix } as context) fields ancestors field row =
-    let
-        resolveRelative : Types.Name -> List ( Types.SheetId, Types.Name ) -> ValueOrError
-        resolveRelative name ancestors_ =
-            fields
-                |> L.filter (.name >> (==) name)
-                |> L.head
-                |> Result.fromMaybe (Types.UndefinedLocalReferenceError name)
-                |> Result.andThen (\f -> evalField context fields ancestors_ f row)
-
-        astContext : Ast.Context Types.SheetId
-        astContext =
-            { resolveGlobalReference = resolveAbsolute
-            , resolveLocalReference = resolveRelative
-            , prefix = prefix
-            , ancestors = ancestors
-            }
-
-        evalDataField dataType =
-            D.get field.name row.data
-                |> M.withDefault ""
-                |> (case dataType of
-                        StringType ->
-                            Types.StringValue >> Ok
-
-                        IntType ->
-                            Ast.parseInt
-                                >> Result.mapError (always Types.ParsingError)
-                                >> Result.map Types.IntValue
-                   )
-    in
-    case field.fieldType of
-        DataField dataType ->
-            evalDataField dataType
-
-        FormulaField formula ->
-            Formula.eval astContext formula
-
-
 tfoot toMsg fields =
     let
         onKeyDown tagger =
@@ -553,3 +512,60 @@ theadHelp toMsg ( name, status, onClick_ ) =
             span [ onClick (OnClickRemoveColumnBtn name |> toMsg) ] [ text "X" ]
     in
     th [ css [ position sticky, top (px 0) ] ] (text name :: sortArrow [ deleteButton ])
+
+
+
+-- EVAL
+
+
+eval : Context -> Table -> Types.Table
+eval context (Table data) =
+    let
+        evalRow row =
+            data.fields
+                |> L.map (\f -> ( f.name, evalField context data.fields [] f row ))
+                |> D.fromList
+    in
+    { fields = data.fields |> List.map .name
+    , rows = data.rows |> L.map evalRow
+    }
+
+
+evalField : Context -> List FieldDefinition -> List Types.LocatedName -> FieldDefinition -> Row -> ValueOrError
+evalField ({ resolveAbsolute, prefix } as context) fields ancestors field row =
+    let
+        resolveRelative : Types.Name -> List ( Types.SheetId, Types.Name ) -> ValueOrError
+        resolveRelative name ancestors_ =
+            fields
+                |> L.filter (.name >> (==) name)
+                |> L.head
+                |> Result.fromMaybe (Types.UndefinedLocalReferenceError name)
+                |> Result.andThen (\f -> evalField context fields ancestors_ f row)
+
+        astContext : Ast.Context Types.SheetId
+        astContext =
+            { resolveGlobalReference = resolveAbsolute
+            , resolveLocalReference = resolveRelative
+            , prefix = prefix
+            , ancestors = ancestors
+            }
+
+        evalDataField dataType =
+            D.get field.name row.data
+                |> M.withDefault ""
+                |> (case dataType of
+                        StringType ->
+                            Types.StringValue >> Ok
+
+                        IntType ->
+                            Ast.parseInt
+                                >> Result.mapError (always Types.ParsingError)
+                                >> Result.map Types.IntValue
+                   )
+    in
+    case field.fieldType of
+        DataField dataType ->
+            evalDataField dataType
+
+        FormulaField formula ->
+            Formula.eval astContext formula
