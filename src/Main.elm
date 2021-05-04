@@ -9,6 +9,7 @@ import Html.Styled.Attributes exposing (css, value)
 import Html.Styled.Events exposing (onClick, onDoubleClick, onInput)
 import List as L
 import Result as R
+import Sheet exposing (Sheet)
 import Types exposing (Name)
 
 
@@ -53,7 +54,7 @@ init _ =
 
 initModel : Model
 initModel =
-    { doc = Doc.init (Doc.tableSheet "Sheet1")
+    { doc = Doc.init (Sheet.initTable "Sheet1")
     , sheetCounter = 2
     , edit = NotEditing
     }
@@ -70,7 +71,7 @@ type Msg
     | InsertTableSheet
     | SelectSheet Types.SheetId
     | RemoveSheet Types.SheetId
-    | EditSheet ( Types.SheetId, Doc.Sheet )
+    | EditSheet ( Types.SheetId, Sheet )
     | UpdateSheetName Name
     | DocMsg Doc.Msg
 
@@ -112,10 +113,10 @@ updateModel msg model =
     in
     case Debug.log "update msg" msg of
         InsertGridSheet ->
-            ( insertSheet Doc.gridSheet, Cmd.none )
+            ( insertSheet Sheet.initGrid, Cmd.none )
 
         InsertTableSheet ->
-            ( insertSheet Doc.tableSheet, Cmd.none )
+            ( insertSheet Sheet.initTable, Cmd.none )
 
         SelectSheet sheetId ->
             ( { model
@@ -139,7 +140,7 @@ updateModel msg model =
             )
 
         EditSheet ( sheetId, sheet ) ->
-            ( commitDoc { model | edit = EditingSheetName sheetId (Doc.sheetName sheet) }
+            ( commitDoc { model | edit = EditingSheetName sheetId (Sheet.getName sheet) }
             , Cmd.none
             )
 
@@ -230,7 +231,7 @@ sheetSelector model =
                         , onClick <| SelectSheet sheetId
                         , onDoubleClick <| EditSheet ( sheetId, sheet )
                         ]
-                        [ text (Doc.sheetName sheet)
+                        [ text (Sheet.getName sheet)
                         , span [ onClick <| RemoveSheet sheetId ]
                             [ text "[x]" ]
                         ]

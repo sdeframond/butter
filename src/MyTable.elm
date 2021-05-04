@@ -258,12 +258,12 @@ updateData getSheetId msg data =
 
 
 view : Config msg -> Table -> Html msg
-view config (Table ({ newField } as data)) =
+view config ((Table data) as table) =
     Ui.row
         [ tableView config data
         , Ui.column
-            [ newFieldView newField config.getSheetName config.toMsg
-            , addPivotTableButton config.makePivotTableMsg
+            [ newFieldView data.newField config.getSheetName config.toMsg
+            , addPivotTableButton table config.makePivotTable
             ]
         ]
 
@@ -318,9 +318,14 @@ newFieldView newField getSheetName toMsg =
         ]
 
 
-addPivotTableButton : msg -> Html msg
-addPivotTableButton makePivotTableMsg =
-    H.button [ onClick makePivotTableMsg ] [ text "Make PivotTable" ]
+addPivotTableButton : Table -> (Table -> msg) -> Html msg
+addPivotTableButton table makePivotTable =
+    let
+        lazyOnClick : (() -> msg) -> H.Attribute msg
+        lazyOnClick tagger =
+            on "click" (Decode.succeed () |> Decode.map tagger)
+    in
+    H.button [ lazyOnClick (\_ -> makePivotTable table) ] [ text "Make PivotTable" ]
 
 
 type alias Context =
@@ -333,7 +338,7 @@ type alias Config msg =
     { toMsg : Msg -> msg
     , context : Context
     , getSheetName : Types.SheetId -> Maybe Types.Name
-    , makePivotTableMsg : msg
+    , makePivotTable : Table -> msg
     }
 
 

@@ -2,19 +2,14 @@ module Document exposing
     ( Document
     , Msg
     , Position(..)
-    , Sheet(..)
     , commitEdit
-    , gridSheet
     , init
     , insertSheet
-    , pivotTableSheet
     , removeSheet
     , renameSheet
     , selectSheet
-    , sheetName
     , sheetsWithIds
     , subscriptions
-    , tableSheet
     , update
     , view
     )
@@ -22,12 +17,10 @@ module Document exposing
 import Css exposing (..)
 import Dict as D exposing (Dict)
 import Formula
-import Grid exposing (Grid)
 import Html.Styled exposing (..)
 import Html.Styled.Attributes exposing (css)
-import MyPivotTable exposing (PivotTable)
-import MyTable as Table exposing (Table)
 import Result as R
+import Sheet exposing (Sheet)
 import Tuple as T
 import Types exposing (Name)
 import ZipList as ZL exposing (ZipList)
@@ -56,34 +49,13 @@ init : Sheet -> Document
 init sheet =
     Document
         { sheets = ZL.singleton ( 0, sheet )
-        , sheetIds = D.fromList [ ( sheetName sheet, 0 ) ]
+        , sheetIds = D.fromList [ ( Sheet.getName sheet, 0 ) ]
         , nextSheetId = 1
         }
 
 
 
 -- SHEETS
-
-
-type Sheet
-    = GridSheet Name Grid
-    | TableSheet Name Table
-    | PivotTableSheet Name PivotTable
-
-
-gridSheet : Name -> Sheet
-gridSheet name =
-    GridSheet name Grid.init
-
-
-tableSheet : Name -> Sheet
-tableSheet name =
-    TableSheet name Table.empty
-
-
-pivotTableSheet : Name -> Types.Table -> Sheet
-pivotTableSheet name table =
-    PivotTableSheet name (MyPivotTable.init table)
 
 
 currentSheet : DocData -> Sheet
@@ -98,20 +70,7 @@ currentSheetId { sheets } =
 
 currentSheetName : DocData -> Types.Name
 currentSheetName { sheets } =
-    ZL.current sheets |> T.second |> sheetName
-
-
-sheetName : Sheet -> Name
-sheetName sheet =
-    case sheet of
-        GridSheet name _ ->
-            name
-
-        TableSheet name _ ->
-            name
-
-        PivotTableSheet name _ ->
-            name
+    ZL.current sheets |> T.second |> Sheet.getName
 
 
 sheetsWithIds : Document -> List (Position ( Types.SheetId, Sheet ))
@@ -150,7 +109,7 @@ getSheet sheetId data =
 
 getSheetName : DocData -> Types.SheetId -> Maybe Types.Name
 getSheetName data sheetId =
-    getSheet sheetId data |> Maybe.map sheetName
+    getSheet sheetId data |> Maybe.map Sheet.getName
 
 
 insertSheet : Sheet -> Document -> Result Types.Error Document
@@ -160,15 +119,15 @@ insertSheet sheet (Document data) =
 
 insertSheetHelp : Sheet -> DocData -> Result Types.Error DocData
 insertSheetHelp sheet data =
-    if sheetExists (sheetName sheet) data then
-        Err (Types.DuplicateSheetNameError (sheetName sheet))
+    if sheetExists (Sheet.getName sheet) data then
+        Err (Types.DuplicateSheetNameError (Sheet.getName sheet))
 
     else
         Ok <|
             { data
                 | sheets = ZL.append [ ( data.nextSheetId, sheet ) ] data.sheets
                 , nextSheetId = data.nextSheetId + 1
-                , sheetIds = D.insert (sheetName sheet) data.nextSheetId data.sheetIds
+                , sheetIds = D.insert (Sheet.getName sheet) data.nextSheetId data.sheetIds
             }
 
 
@@ -220,15 +179,7 @@ renameSheet sheetId newName (Document data) =
                 renameSheet_ ( currentId, sheet ) =
                     T.pair currentId <|
                         if currentId == sheetId then
-                            case sheet of
-                                GridSheet _ sheetData ->
-                                    GridSheet validNewName sheetData
-
-                                TableSheet _ sheetData ->
-                                    TableSheet validNewName sheetData
-
-                                PivotTableSheet _ sheetData ->
-                                    PivotTableSheet validNewName sheetData
+                            Sheet.rename validNewName sheet
 
                         else
                             sheet
@@ -263,12 +214,9 @@ renameSheet sheetId newName (Document data) =
 
 subscriptions : Document -> Sub Msg
 subscriptions (Document data) =
-    case currentSheet data of
-        PivotTableSheet _ pt ->
-            Sub.map PivotTableMsg (MyPivotTable.subscriptions pt)
-
-        _ ->
-            Sub.none
+    currentSheet data
+        |> Sheet.subscriptions
+        |> Sub.map SheetMsg
 
 
 
@@ -276,10 +224,9 @@ subscriptions (Document data) =
 
 
 type Msg
-    = GridMsg Grid.Msg
-    | TableMsg Table.Msg
-    | PivotTableMsg MyPivotTable.Msg
-    | MakePivotTable
+    = SheetMsg Sheet.Msg
+      -- | MakePivotTable
+    | InsertSheet Sheet
 
 
 update : Msg -> Document -> ( Document, Cmd Msg )
@@ -290,61 +237,39 @@ update msg (Document data) =
 updateData : Msg -> DocData -> ( DocData, Cmd Msg )
 updateData msg data =
     let
-        updateSheet newSheet d =
+        updateSheet d newSheet =
             { d
                 | sheets = ZL.setCurrent ( currentSheetId data, newSheet ) d.sheets
             }
     in
-    case ( msg, currentSheet data ) of
-        ( GridMsg gridMsg, GridSheet name grid ) ->
-            ( updateSheet (GridSheet name <| Grid.update (getSheetId data) gridMsg grid) data
-            , Cmd.none
-            )
+    case msg of
+        SheetMsg sheetMsg ->
+            Sheet.update (getSheetId data) sheetMsg (currentSheet data)
+                |> Tuple.mapFirst (updateSheet data)
+                |> Tuple.mapSecond (Cmd.map SheetMsg)
 
-        ( TableMsg tableMsg, TableSheet name table ) ->
-            ( updateSheet (TableSheet name <| Table.update (getSheetId data) tableMsg table) data
-            , Cmd.none
-            )
-
-        ( PivotTableMsg ptMsg, PivotTableSheet name pt ) ->
-            let
-                ( newPt, cmd ) =
-                    MyPivotTable.update ptMsg pt
-            in
-            ( updateSheet (PivotTableSheet name newPt) data
-            , Cmd.map PivotTableMsg cmd
-            )
-
-        ( MakePivotTable, TableSheet _ table ) ->
-            let
-                context =
-                    { resolveAbsolute = eval data
-                    , prefix = currentSheetId data
-                    }
-
-                newSheet =
-                    pivotTableSheet
-                        ("PT" ++ String.fromInt data.nextSheetId)
-                        (Table.eval context table)
-            in
-            ( insertSheetHelp newSheet data
+        InsertSheet sheet ->
+            ( insertSheetHelp sheet data
                 |> Result.withDefault data
             , Cmd.none
             )
 
-        ( _, _ ) ->
-            ( data, Cmd.none )
-
 
 commitEdit : Document -> Document
 commitEdit (Document data) =
-    Document <|
-        case currentSheet data of
-            GridSheet name grid ->
-                { data | sheets = ZL.setCurrent ( currentSheetId data, GridSheet name (Grid.commit grid) ) data.sheets }
-
-            _ ->
-                data
+    let
+        setCurrentSheet sheet =
+            { data
+                | sheets =
+                    ZL.setCurrent
+                        ( currentSheetId data, sheet )
+                        data.sheets
+            }
+    in
+    currentSheet data
+        |> Sheet.commitEdit
+        |> setCurrentSheet
+        |> Document
 
 
 getSheetId : DocData -> Types.Name -> Maybe Types.SheetId
@@ -358,30 +283,19 @@ getSheetId data name =
 
 eval : DocData -> Types.LocatedName -> List Types.LocatedName -> Types.ValueOrError
 eval data ( sheetId, ref ) ancestors =
+    let
+        context : Sheet.Context
+        context =
+            { ancestors = ancestors
+            , prefix = sheetId
+            , resolveGlobalReference = eval data
+            }
+    in
     getSheet sheetId data
         |> Result.fromMaybe
-            (getSheetName data sheetId
-                |> Maybe.map Types.UndefinedSheetError
-                |> Maybe.withDefault (Types.UnexpectedError "Found an orphan sheet")
-            )
-        |> Result.andThen
-            (\sheet ->
-                case sheet of
-                    GridSheet _ grid ->
-                        let
-                            context : Grid.Context
-                            context =
-                                { ancestors = ancestors
-                                , prefix = sheetId
-                                , resolveGlobalReference = eval data
-                                , resolveLocalReference = \cellRef -> eval data ( sheetId, cellRef )
-                                }
-                        in
-                        Grid.evalCell grid context ( sheetId, ref )
-
-                    _ ->
-                        Err (Types.TypeError "Only grids can be referenced for now")
-            )
+            -- Is it realy unexpected though ? Eg what happens when some sheet is removed ?
+            (Types.UnexpectedError "Found an orphan sheet")
+        |> Result.andThen (Sheet.eval ref context)
 
 
 
@@ -395,24 +309,15 @@ type alias Config msg =
 view : Config msg -> Document -> Html msg
 view { toMsg } (Document data) =
     let
-        gridConfig sheetId =
-            { toMsg = GridMsg >> toMsg
+        config : Sheet.Config msg
+        config =
+            { toMsg = SheetMsg >> toMsg
+            , insertSheet = InsertSheet >> toMsg
             , getSheetName = getSheetName data
             , context =
-                { prefix = sheetId
+                { prefix = currentSheetId data
                 , ancestors = []
                 , resolveGlobalReference = eval data
-                , resolveLocalReference = \cellRef -> eval data ( sheetId, cellRef )
-                }
-            }
-
-        tableConfig sheetId =
-            { toMsg = TableMsg >> toMsg
-            , getSheetName = getSheetName data
-            , makePivotTableMsg = MakePivotTable |> toMsg
-            , context =
-                { prefix = sheetId
-                , resolveAbsolute = eval data
                 }
             }
     in
@@ -423,13 +328,5 @@ view { toMsg } (Document data) =
             , overflow hidden
             ]
         ]
-        [ case ZL.current data.sheets of
-            ( id, GridSheet _ grid ) ->
-                Grid.view (gridConfig id) grid
-
-            ( id, TableSheet _ table ) ->
-                Table.view (tableConfig id) table
-
-            ( _, PivotTableSheet _ pt ) ->
-                MyPivotTable.view (PivotTableMsg >> toMsg) pt
+        [ Sheet.view config (currentSheet data)
         ]

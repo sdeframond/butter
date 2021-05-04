@@ -48,7 +48,10 @@ type alias Config msg =
 
 
 type alias Context =
-    Formula.Context Types.SheetId
+    { resolveGlobalReference : ( Types.SheetId, Types.Name ) -> List ( Types.SheetId, Types.Name ) -> Types.ValueOrError
+    , prefix : Types.SheetId
+    , ancestors : List ( Types.SheetId, Types.Name )
+    }
 
 
 
@@ -74,18 +77,26 @@ defaultCell =
     DataCell Types.StringType ""
 
 
-evalCell : Grid -> Context -> Types.LocatedName -> Types.ValueOrError
+evalCell : Grid -> Context -> Types.Name -> Types.ValueOrError
 evalCell (Grid data) =
     evalCell_ data
 
 
-evalCell_ : GridData -> Context -> Types.LocatedName -> Types.ValueOrError
+evalCell_ : GridData -> Context -> Types.Name -> Types.ValueOrError
 evalCell_ data context cellRef =
     let
+        formulaContext : Formula.Context Types.SheetId
+        formulaContext =
+            { resolveGlobalReference = context.resolveGlobalReference
+            , prefix = context.prefix
+            , ancestors = context.ancestors
+            , resolveLocalReference = \ref -> context.resolveGlobalReference ( context.prefix, ref )
+            }
+
         help cell =
             case cell of
                 FormulaCell formula ->
-                    Formula.eval context formula
+                    Formula.eval formulaContext formula
 
                 DataCell cellType input ->
                     case cellType of
@@ -97,7 +108,7 @@ evalCell_ data context cellRef =
                                 |> Result.mapError (always Types.ParsingError)
                                 |> Result.map Types.IntValue
     in
-    getCell (Tuple.second cellRef) data
+    getCell cellRef data
         |> Result.andThen help
 
 
@@ -276,7 +287,7 @@ view { toMsg, getSheetName, context } (Grid ({ editState } as data)) =
                             |> toMsg
                             |> onClick
                         ]
-                        [ evalCell_ data context ( context.prefix, cellName )
+                        [ evalCell_ data context cellName
                             |> Types.valueOrErrorToString
                             |> text
                         ]
