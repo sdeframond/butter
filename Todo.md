@@ -20,8 +20,6 @@ Table ranges :
 Todo
 ====
 
-- Feature : explicitely type grid cells (similar to table fields)
-- Refactor : Move sheet selection and edition next to where the data is defined (maybe into Document ?)
 - Feature : Save to file (and load file)
 - Feature : Local storage
 - Feature : Common look for Grid, Table and PivotTable
@@ -46,10 +44,12 @@ Todo
 Doing
 =====
 
+- Refactor : Move sheet selection and edition next to where the data is defined (maybe into Document ?)
 
 Done
 ====
 
+- 2021-05-04 - Feature : explicitely type grid cells (similar to table fields)
 - 2021-04-21 - Refactor : Move grid sheet's data into the GridSheet itself.
 - 2021-04-17 - Feature : Pivot tables
 - 2021-04-17 - Enabler : Use IDs instead of name in references

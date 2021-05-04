@@ -19,9 +19,9 @@ module Document exposing
     , view
     )
 
-import Ast
 import Css exposing (..)
 import Dict as D exposing (Dict)
+import Formula
 import Grid exposing (Grid)
 import Html.Styled exposing (..)
 import Html.Styled.Attributes exposing (css)
@@ -245,7 +245,7 @@ renameSheet sheetId newName (Document data) =
         Err (Types.DuplicateSheetNameError newName)
 
     else
-        Ast.parseName newName
+        Formula.parseName newName
             |> R.mapError (always Types.InvalidSheetNameError)
             |> R.andThen
                 (\validNewName ->
@@ -341,7 +341,7 @@ commitEdit (Document data) =
     Document <|
         case currentSheet data of
             GridSheet name grid ->
-                { data | sheets = ZL.setCurrent ( currentSheetId data, GridSheet name (Grid.commit (getSheetId data) grid) ) data.sheets }
+                { data | sheets = ZL.setCurrent ( currentSheetId data, GridSheet name (Grid.commit grid) ) data.sheets }
 
             _ ->
                 data
@@ -369,7 +369,7 @@ eval data ( sheetId, ref ) ancestors =
                 case sheet of
                     GridSheet _ grid ->
                         let
-                            context : Ast.Context Types.SheetId
+                            context : Grid.Context
                             context =
                                 { ancestors = ancestors
                                 , prefix = sheetId
@@ -420,7 +420,7 @@ view { toMsg } (Document data) =
         [ css
             [ width (pct 100)
             , height (pct 100)
-            , overflow auto
+            , overflow hidden
             ]
         ]
         [ case ZL.current data.sheets of

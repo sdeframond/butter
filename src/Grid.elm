@@ -1,6 +1,15 @@
-module Grid exposing (Config, Grid, Msg, commit, evalCell, init, update, view)
+module Grid exposing
+    ( Config
+    , Context
+    , Grid
+    , Msg
+    , commit
+    , evalCell
+    , init
+    , update
+    , view
+    )
 
-import Ast
 import Css exposing (..)
 import Dict exposing (Dict)
 import Formula exposing (Formula)
@@ -9,7 +18,8 @@ import Html.Styled.Attributes exposing (css, value)
 import Html.Styled.Events exposing (onClick, onInput)
 import List as L
 import String as S
-import Types exposing (Error(..), Name, Value(..))
+import Types exposing (DataType(..), Error(..), Name, Value(..))
+import Ui
 
 
 
@@ -21,16 +31,24 @@ type Grid
 
 
 type alias GridData =
-    { editState : Maybe ( Name, String )
-    , cells : Dict Types.Name Formula
+    { editState : Maybe ( Name, Cell )
+    , cells : Dict Types.Name Cell
     }
+
+
+type alias UserInput =
+    String
 
 
 type alias Config msg =
     { toMsg : Msg -> msg
     , getSheetName : Types.SheetId -> Maybe Types.Name
-    , context : Ast.Context Types.SheetId
+    , context : Context
     }
+
+
+type alias Context =
+    Formula.Context Types.SheetId
 
 
 
@@ -43,21 +61,47 @@ init =
 
 
 
---CELL HELPERS
+--CELL
 
 
-evalCell : Grid -> Ast.Context Types.SheetId -> Types.LocatedName -> Types.ValueOrError
+type Cell
+    = FormulaCell Formula
+    | DataCell Types.DataType UserInput
+
+
+defaultCell : Cell
+defaultCell =
+    DataCell Types.StringType ""
+
+
+evalCell : Grid -> Context -> Types.LocatedName -> Types.ValueOrError
 evalCell (Grid data) =
     evalCell_ data
 
 
-evalCell_ : GridData -> Ast.Context Types.SheetId -> Types.LocatedName -> Types.ValueOrError
+evalCell_ : GridData -> Context -> Types.LocatedName -> Types.ValueOrError
 evalCell_ data context cellRef =
+    let
+        help cell =
+            case cell of
+                FormulaCell formula ->
+                    Formula.eval context formula
+
+                DataCell cellType input ->
+                    case cellType of
+                        Types.StringType ->
+                            Types.StringValue input |> Ok
+
+                        Types.IntType ->
+                            Formula.parseInt input
+                                |> Result.mapError (always Types.ParsingError)
+                                |> Result.map Types.IntValue
+    in
     getCell (Tuple.second cellRef) data
-        |> Result.andThen (Formula.eval context)
+        |> Result.andThen help
 
 
-getCell : Types.Name -> GridData -> Result Types.Error Formula
+getCell : Types.Name -> GridData -> Result Types.Error Cell
 getCell cellName data =
     Dict.get cellName data.cells
         |> Result.fromMaybe (Types.UndefinedLocalReferenceError cellName)
@@ -68,57 +112,105 @@ getCell cellName data =
 
 
 type Msg
-    = StartEditing String String
-    | UpdateEdit String String
+    = StartEditing Types.Name
+    | UpdateEdit UserInput
+    | OnClickCellTypeBtn
+    | OnClickCellDataTypeBtn
 
 
 update : (Name -> Maybe Types.SheetId) -> Msg -> Grid -> Grid
 update getSheetId msg (Grid data) =
+    let
+        mapEditedCell fn =
+            .editState >> Maybe.map (Tuple.mapSecond fn)
+    in
     case msg of
-        UpdateEdit name content ->
-            Grid { data | editState = Just ( name, content ) }
+        UpdateEdit input ->
+            case data.editState of
+                Just ( name, cell ) ->
+                    let
+                        newCell =
+                            case cell of
+                                FormulaCell _ ->
+                                    FormulaCell (Formula.fromSource getSheetId input)
 
-        StartEditing name content ->
+                                DataCell dataType _ ->
+                                    DataCell dataType input
+                    in
+                    Grid { data | editState = Just ( name, newCell ) }
+
+                Nothing ->
+                    Grid data
+
+        StartEditing name ->
             let
                 newData =
-                    commitData getSheetId data
+                    commitData data
+
+                newCell =
+                    getCell name data
+                        |> Result.withDefault defaultCell
             in
-            Grid { newData | editState = Just ( name, content ) }
+            Grid { newData | editState = Just ( name, newCell ) }
+
+        OnClickCellTypeBtn ->
+            let
+                switchCellType cell =
+                    case cell of
+                        FormulaCell formula ->
+                            DataCell Types.StringType (Formula.initialInput formula)
+
+                        DataCell _ input ->
+                            FormulaCell (Formula.fromSource getSheetId input)
+            in
+            Grid { data | editState = mapEditedCell switchCellType data }
+
+        OnClickCellDataTypeBtn ->
+            let
+                mapDataType fn cell =
+                    case cell of
+                        FormulaCell _ ->
+                            cell
+
+                        DataCell dataType input ->
+                            DataCell (fn dataType) input
+
+                switchDataType dataType =
+                    case dataType of
+                        Types.IntType ->
+                            Types.StringType
+
+                        Types.StringType ->
+                            Types.IntType
+            in
+            Grid { data | editState = mapEditedCell (mapDataType switchDataType) data }
 
 
 
 -- COMMIT
 
 
-commit : (Name -> Maybe Types.SheetId) -> Grid -> Grid
-commit getSheetId (Grid data) =
-    commitData getSheetId data |> Grid
+commit : Grid -> Grid
+commit (Grid data) =
+    commitData data |> Grid
 
 
-commitData : (Name -> Maybe Types.SheetId) -> GridData -> GridData
-commitData getSheetId data =
-    let
-        insertSource cellName input =
-            case input of
-                "" ->
-                    { data | cells = Dict.remove cellName data.cells }
-
-                _ ->
-                    { data
-                        | cells =
-                            Dict.insert cellName
-                                (Formula.fromSource getSheetId input)
-                                data.cells
-                    }
-    in
+commitData : GridData -> GridData
+commitData data =
     data.editState
         |> Maybe.map
-            (\( name, input ) ->
-                let
-                    newData =
-                        insertSource name input
-                in
-                { newData | editState = Nothing }
+            (\( name, cell ) ->
+                if cell == defaultCell then
+                    { data
+                        | cells = Dict.remove name data.cells
+                        , editState = Nothing
+                    }
+
+                else
+                    { data
+                        | cells = Dict.insert name cell data.cells
+                        , editState = Nothing
+                    }
             )
         |> Maybe.withDefault data
 
@@ -162,14 +254,16 @@ view { toMsg, getSheetName, context } (Grid ({ editState } as data)) =
         rowHeader row =
             myTh [ css [ left (px 0), position sticky ] ] [ text <| S.fromInt row ]
 
-        cellSource cellName =
-            getCell cellName data
-                |> Result.andThen
-                    (Formula.sourceView getSheetName
-                        >> Result.fromMaybe (Types.UnexpectedError "Found an orphan sheet id reference")
-                    )
+        cellSource cell =
+            case cell of
+                FormulaCell formula ->
+                    Formula.sourceView getSheetName formula
+                        |> Maybe.withDefault "Critical error"
 
-        cell row col =
+                DataCell _ input ->
+                    input
+
+        cellView row col =
             let
                 cellName =
                     [ col |> toLetter, row |> S.fromInt ]
@@ -178,9 +272,7 @@ view { toMsg, getSheetName, context } (Grid ({ editState } as data)) =
                 defaultCellView =
                     td
                         [ cellCss
-                        , cellSource cellName
-                            |> Result.withDefault ""
-                            |> StartEditing cellName
+                        , StartEditing cellName
                             |> toMsg
                             |> onClick
                         ]
@@ -197,12 +289,12 @@ view { toMsg, getSheetName, context } (Grid ({ editState } as data)) =
                         ]
             in
             case editState of
-                Just ( editedCellName, str ) ->
+                Just ( editedCellName, cell ) ->
                     if cellName == editedCellName then
                         td [ cellCss ]
                             [ input
-                                [ value str
-                                , onInput <| (toMsg << UpdateEdit cellName)
+                                [ value (cellSource cell)
+                                , onInput (UpdateEdit >> toMsg)
                                 ]
                                 []
                             ]
@@ -219,11 +311,52 @@ view { toMsg, getSheetName, context } (Grid ({ editState } as data)) =
                     (\row ->
                         tr [] <|
                             rowHeader row
-                                :: mapColumns (cell row)
+                                :: mapColumns (cellView row)
                     )
     in
-    H.table
-        [ css [ borderCollapse collapse ] ]
-        [ thead [ css [ position sticky, top (px 0) ] ] columnHeaders
-        , tbody [] rows
+    Ui.row
+        [ H.table
+            [ css
+                [ borderCollapse collapse
+                , flex2 (int 1) (int 1)
+                , overflow auto
+                , display block
+                ]
+            ]
+            [ thead [ css [ position sticky, top (px 0) ] ] columnHeaders
+            , tbody [] rows
+            ]
+        , case data.editState of
+            Just ( _, cell ) ->
+                Ui.column [ cellPropertiesView toMsg cell ]
+
+            Nothing ->
+                text ""
+        ]
+
+
+cellPropertiesView : (Msg -> msg) -> Cell -> Html msg
+cellPropertiesView toMsg cell =
+    H.div []
+        [ H.button [ onClick (OnClickCellTypeBtn |> toMsg) ]
+            [ case cell of
+                FormulaCell _ ->
+                    text "Formula"
+
+                DataCell _ _ ->
+                    text "Data"
+            ]
+        , case cell of
+            FormulaCell _ ->
+                text ""
+
+            DataCell dataType _ ->
+                H.button [ onClick (OnClickCellDataTypeBtn |> toMsg) ]
+                    [ case dataType of
+                        Types.IntType ->
+                            text "Int"
+
+                        Types.StringType ->
+                            text "String"
+                    ]
         ]

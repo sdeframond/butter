@@ -7,7 +7,6 @@ module MyTable exposing
     , view
     )
 
-import Ast
 import Css exposing (..)
 import Dict as D exposing (Dict)
 import Formula exposing (Formula)
@@ -27,6 +26,7 @@ import List as L
 import Maybe as M
 import Table as T exposing (defaultCustomizations)
 import Types exposing (DataType(..), Error(..), Name, ValueOrError)
+import Ui
 
 
 
@@ -259,34 +259,13 @@ updateData getSheetId msg data =
 
 view : Config msg -> Table -> Html msg
 view config (Table ({ newField } as data)) =
-    H.div
-        [ css
-            [ displayFlex
-            , flexDirection Css.row
-            , height (pct 100)
-            ]
-        ]
+    Ui.row
         [ tableView config data
-        , leftColumnView
+        , Ui.column
             [ newFieldView newField config.getSheetName config.toMsg
             , addPivotTableButton config.makePivotTableMsg
             ]
         ]
-
-
-leftColumnView : List (Html msg) -> Html msg
-leftColumnView content =
-    H.div
-        [ css
-            [ flex3 (int 0) (int 0) (px 100)
-            , border3 (px 1) solid (rgb 0 0 0)
-            , height (pct 100)
-            , display inlineBlock
-            , displayFlex
-            , flexDirection column
-            ]
-        ]
-        content
 
 
 tableView : Config msg -> TableData -> Html msg
@@ -532,7 +511,7 @@ eval context (Table data) =
 
 
 evalField : Context -> List FieldDefinition -> List Types.LocatedName -> FieldDefinition -> Row -> ValueOrError
-evalField ({ resolveAbsolute, prefix } as context) fields ancestors field row =
+evalField context fields ancestors field row =
     let
         resolveRelative : Types.Name -> List ( Types.SheetId, Types.Name ) -> ValueOrError
         resolveRelative name ancestors_ =
@@ -542,11 +521,11 @@ evalField ({ resolveAbsolute, prefix } as context) fields ancestors field row =
                 |> Result.fromMaybe (Types.UndefinedLocalReferenceError name)
                 |> Result.andThen (\f -> evalField context fields ancestors_ f row)
 
-        astContext : Ast.Context Types.SheetId
-        astContext =
-            { resolveGlobalReference = resolveAbsolute
+        formulaContext : Formula.Context Types.SheetId
+        formulaContext =
+            { resolveGlobalReference = context.resolveAbsolute
             , resolveLocalReference = resolveRelative
-            , prefix = prefix
+            , prefix = context.prefix
             , ancestors = ancestors
             }
 
@@ -558,7 +537,7 @@ evalField ({ resolveAbsolute, prefix } as context) fields ancestors field row =
                             Types.StringValue >> Ok
 
                         IntType ->
-                            Ast.parseInt
+                            Formula.parseInt
                                 >> Result.mapError (always Types.ParsingError)
                                 >> Result.map Types.IntValue
                    )
@@ -568,4 +547,4 @@ evalField ({ resolveAbsolute, prefix } as context) fields ancestors field row =
             evalDataField dataType
 
         FormulaField formula ->
-            Formula.eval astContext formula
+            Formula.eval formulaContext formula
