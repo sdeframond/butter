@@ -44,11 +44,11 @@ Todo
 Doing
 =====
 
-- Refactor : Move sheet selection and edition next to where the data is defined (maybe into Document ?)
 
 Done
 ====
 
+- 2021-05-05 - Refactor : Move sheet selection and edition next to where the data is defined (maybe into Document ?)
 - 2021-05-04 - Feature : explicitely type grid cells (similar to table fields)
 - 2021-04-21 - Refactor : Move grid sheet's data into the GridSheet itself.
 - 2021-04-17 - Feature : Pivot tables
