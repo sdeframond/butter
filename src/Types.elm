@@ -2,7 +2,6 @@ module Types exposing
     ( DataType(..)
     , Error(..)
     , LocatedName
-    , Name
     , SheetId
     , Table
     , Value(..)
@@ -11,7 +10,7 @@ module Types exposing
     , valueToString
     )
 
-import Dict exposing (Dict)
+import Name
 
 
 type Error
@@ -28,7 +27,7 @@ type Error
 
 
 type alias Name =
-    String
+    Name.Name
 
 
 type alias LocatedName =
@@ -47,12 +46,8 @@ type Value
 
 type alias Table =
     { fields : List Name
-    , rows : List Record
+    , rows : List (Name.Store ValueOrError)
     }
-
-
-type alias Record =
-    Dict Name ValueOrError
 
 
 type alias ValueOrError =

@@ -20,6 +20,7 @@ Table ranges :
 Todo
 ====
 
+- Enabler : encapsulate Name in order to make sure it is parsed.
 - Feature : Save to file (and load file)
 - Feature : Local storage
 - Feature : Common look for Grid, Table and PivotTable

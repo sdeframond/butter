@@ -8,8 +8,9 @@ module MyTable exposing
     )
 
 import Css exposing (..)
-import Dict as D exposing (Dict)
+import Dict
 import Formula exposing (Formula)
+import Html
 import Html.Styled as H
     exposing
         ( Html
@@ -24,8 +25,9 @@ import Html.Styled.Events exposing (keyCode, on, onClick, onInput)
 import Json.Decode as Decode
 import List as L
 import Maybe as M
+import Name exposing (Name)
 import Table as T exposing (defaultCustomizations)
-import Types exposing (DataType(..), Error(..), Name, ValueOrError)
+import Types exposing (DataType(..), Error(..), ValueOrError)
 import Ui
 
 
@@ -42,8 +44,8 @@ type alias TableData =
     , rows : List Row
     , state : T.State
     , nextId : Int
-    , editedCell : Maybe ( ( Int, String ), String )
-    , newField : FieldDefinition
+    , editedCell : Maybe ( ( Int, Name ), String )
+    , fieldForm : FieldForm
     }
 
 
@@ -55,15 +57,28 @@ empty =
         , state = T.initialSort ""
         , nextId = 1
         , editedCell = Nothing
-        , newField = emptyField
+        , fieldForm = emptyFieldForm
         }
 
 
 type alias FieldDefinition =
-    { name : String
+    { name : Name
     , edit : String
     , fieldType : FieldType
     }
+
+
+type alias FieldForm =
+    { name : Maybe Name
+    , fieldType : FieldType
+    }
+
+
+formToField : FieldForm -> Maybe FieldDefinition
+formToField form =
+    form.name
+        |> Maybe.map FieldDefinition
+        |> Maybe.map (\f -> f "" form.fieldType)
 
 
 type FieldType
@@ -71,26 +86,13 @@ type FieldType
     | FormulaField Formula
 
 
-emptyField : FieldDefinition
-emptyField =
-    { name = "", edit = "", fieldType = DataField StringType }
-
-
-isValidField : FieldDefinition -> Bool
-isValidField { name, fieldType } =
-    name
-        /= ""
-        && (case fieldType of
-                DataField _ ->
-                    True
-
-                FormulaField formula ->
-                    Formula.isValid formula
-           )
+emptyFieldForm : FieldForm
+emptyFieldForm =
+    { name = Nothing, fieldType = DataField StringType }
 
 
 type alias Row =
-    { id : Int, data : Dict String String }
+    { id : Int, data : Name.Store String }
 
 
 
@@ -101,7 +103,7 @@ type Msg
     = SetTableState T.State
     | UpdateNewRowField Name String
     | KeyDown Int
-    | EditCell Int String String
+    | EditCell Int Name String
     | UpdateEditedCell String
     | OnClickAddFieldBtn
     | OnInputNewFieldName String
@@ -111,12 +113,12 @@ type Msg
     | OnInputNewFieldFormula String
 
 
-update : (Types.Name -> Maybe Types.SheetId) -> Msg -> Table -> Table
+update : (Name -> Maybe Types.SheetId) -> Msg -> Table -> Table
 update getSheetId msg (Table data) =
     Table <| updateData getSheetId msg data
 
 
-updateData : (Types.Name -> Maybe Types.SheetId) -> Msg -> TableData -> TableData
+updateData : (Name -> Maybe Types.SheetId) -> Msg -> TableData -> TableData
 updateData getSheetId msg data =
     let
         commit d =
@@ -131,7 +133,7 @@ updateData getSheetId msg data =
                             L.map
                                 (\row ->
                                     if row.id == rowId then
-                                        { row | data = D.insert fieldName content row.data }
+                                        { row | data = Name.insert fieldName content row.data }
 
                                     else
                                         row
@@ -140,7 +142,7 @@ updateData getSheetId msg data =
                     }
 
         setNewFieldType type_ d =
-            { d | newField = setFieldType type_ data.newField }
+            { d | fieldForm = setFieldType type_ data.fieldForm }
 
         setFieldType type_ field =
             { field | fieldType = type_ }
@@ -170,7 +172,7 @@ updateData getSheetId msg data =
                     , data =
                         data.fields
                             |> L.map (\f -> ( f.name, f.edit ))
-                            |> D.fromList
+                            |> Name.fromList
                     }
             in
             if code == 13 then
@@ -200,32 +202,33 @@ updateData getSheetId msg data =
                     { data | editedCell = Just ( cellRef, content ) }
 
         OnClickAddFieldBtn ->
-            if isValidField data.newField then
-                { data
-                    | newField = emptyField
-                    , fields = data.fields ++ [ data.newField ]
-                }
+            formToField data.fieldForm
+                |> Maybe.map
+                    (\field ->
+                        { data
+                            | fieldForm = emptyFieldForm
+                            , fields = data.fields ++ [ field ]
+                        }
+                    )
+                |> Maybe.withDefault data
 
-            else
-                data
-
-        OnInputNewFieldName name ->
+        OnInputNewFieldName input ->
             let
-                newField =
-                    data.newField
+                form =
+                    data.fieldForm
             in
-            { data | newField = { newField | name = name } }
+            { data | fieldForm = { form | name = Name.fromString input } }
 
-        OnClickRemoveColumnBtn name ->
+        OnClickRemoveColumnBtn nameStr ->
             { data
-                | fields = L.filter (.name >> (/=) name) data.fields
-                , rows = L.map (\r -> { r | data = D.remove name r.data }) data.rows
+                | fields = L.filter (.name >> Name.matchesString nameStr >> not) data.fields
+                , rows = L.map (\r -> { r | data = Name.removeString nameStr r.data }) data.rows
             }
 
         OnClickNewFieldTypeBtn ->
             commit data
                 |> (setNewFieldType <|
-                        case data.newField.fieldType of
+                        case data.fieldForm.fieldType of
                             DataField _ ->
                                 FormulaField (Formula.fromSource getSheetId "")
 
@@ -235,7 +238,7 @@ updateData getSheetId msg data =
 
         OnClickNewFieldDataTypeBtn ->
             commit data
-                |> (case data.newField.fieldType of
+                |> (case data.fieldForm.fieldType of
                         FormulaField _ ->
                             identity
 
@@ -262,8 +265,8 @@ view config ((Table data) as table) =
     Ui.row
         [ tableView config data
         , Ui.column
-            [ newFieldView data.newField config.getSheetName config.toMsg
-            , addPivotTableButton table config.makePivotTable
+            [ formView data.fieldForm config.getSheetName config.toMsg
+            , addPivotTableButton table config.insertPivotTable
             ]
         ]
 
@@ -279,19 +282,23 @@ tableView config ({ rows, state } as data) =
         [ T.view (sortableTableConfig config data) state rows |> H.fromUnstyled ]
 
 
-newFieldView : FieldDefinition -> (Types.SheetId -> Maybe Types.Name) -> (Msg -> msg) -> Html msg
-newFieldView newField getSheetName toMsg =
+formView : FieldForm -> (Types.SheetId -> Maybe Name) -> (Msg -> msg) -> Html msg
+formView form getSheetName toMsg =
     H.div []
-        [ input [ value newField.name, onInput (OnInputNewFieldName >> toMsg) ] []
+        [ input
+            [ form.name |> Maybe.map Name.toString |> Maybe.withDefault "" |> value
+            , onInput (OnInputNewFieldName >> toMsg)
+            ]
+            []
         , H.button [ onClick (OnClickNewFieldTypeBtn |> toMsg) ]
-            [ case newField.fieldType of
+            [ case form.fieldType of
                 FormulaField _ ->
                     text "Formula"
 
                 DataField _ ->
                     text "Data"
             ]
-        , case newField.fieldType of
+        , case form.fieldType of
             FormulaField formula ->
                 input
                     [ value
@@ -337,8 +344,8 @@ type alias Context =
 type alias Config msg =
     { toMsg : Msg -> msg
     , context : Context
-    , getSheetName : Types.SheetId -> Maybe Types.Name
-    , makePivotTable : Table -> msg
+    , getSheetName : Types.SheetId -> Maybe Name
+    , insertPivotTable : Table -> msg
     }
 
 
@@ -347,8 +354,13 @@ sortableTableConfig { toMsg, context } { fields, editedCell } =
     let
         toColumn field =
             T.veryCustomColumn
-                { name = field.name
-                , sorter = T.decreasingOrIncreasingBy (.data >> D.get field.name >> M.withDefault "")
+                { name = Name.toString field.name
+                , sorter =
+                    T.decreasingOrIncreasingBy
+                        (.data
+                            >> Name.get field.name
+                            >> M.withDefault ""
+                        )
                 , viewData = fieldView field
                 }
 
@@ -357,7 +369,7 @@ sortableTableConfig { toMsg, context } { fields, editedCell } =
                 >> L.singleton
                 >> span
                     [ onClick
-                        (D.get name data
+                        (Name.get name data
                             |> M.withDefault ""
                             |> EditCell id name
                             |> toMsg
@@ -411,6 +423,7 @@ sortableTableConfig { toMsg, context } { fields, editedCell } =
         }
 
 
+tfoot : (Msg -> msg) -> List FieldDefinition -> T.HtmlDetails msg
 tfoot toMsg fields =
     let
         onKeyDown tagger =
@@ -433,6 +446,7 @@ tfoot toMsg fields =
         )
 
 
+thead : List FieldDefinition -> (Msg -> msg) -> List ( String, T.Status, Html.Attribute msg ) -> T.HtmlDetails msg
 thead fields toMsg headers =
     let
         onKeyDown tagger =
@@ -458,6 +472,7 @@ thead fields toMsg headers =
             ]
 
 
+theadHelp : (Msg -> msg) -> ( String, T.Status, Html.Attribute msg ) -> Html msg
 theadHelp toMsg ( name, status, onClick_ ) =
     let
         sortOnClick =
@@ -508,7 +523,7 @@ eval context (Table data) =
         evalRow row =
             data.fields
                 |> L.map (\f -> ( f.name, evalField context data.fields [] f row ))
-                |> D.fromList
+                |> Name.fromList
     in
     { fields = data.fields |> List.map .name
     , rows = data.rows |> L.map evalRow
@@ -518,7 +533,7 @@ eval context (Table data) =
 evalField : Context -> List FieldDefinition -> List Types.LocatedName -> FieldDefinition -> Row -> ValueOrError
 evalField context fields ancestors field row =
     let
-        resolveRelative : Types.Name -> List ( Types.SheetId, Types.Name ) -> ValueOrError
+        resolveRelative : Name -> List ( Types.SheetId, Name ) -> ValueOrError
         resolveRelative name ancestors_ =
             fields
                 |> L.filter (.name >> (==) name)
@@ -535,7 +550,7 @@ evalField context fields ancestors field row =
             }
 
         evalDataField dataType =
-            D.get field.name row.data
+            Name.get field.name row.data
                 |> M.withDefault ""
                 |> (case dataType of
                         StringType ->

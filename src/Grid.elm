@@ -17,8 +17,9 @@ import Html.Styled as H exposing (..)
 import Html.Styled.Attributes exposing (css, value)
 import Html.Styled.Events exposing (onClick, onInput)
 import List as L
+import Name exposing (Name)
 import String as S
-import Types exposing (DataType(..), Error(..), Name, Value(..))
+import Types exposing (DataType(..), Error(..), Value(..))
 import Ui
 
 
@@ -32,7 +33,7 @@ type Grid
 
 type alias GridData =
     { editState : Maybe ( Name, Cell )
-    , cells : Dict Types.Name Cell
+    , cells : Dict String Cell
     }
 
 
@@ -42,15 +43,15 @@ type alias UserInput =
 
 type alias Config msg =
     { toMsg : Msg -> msg
-    , getSheetName : Types.SheetId -> Maybe Types.Name
+    , getSheetName : Types.SheetId -> Maybe Name
     , context : Context
     }
 
 
 type alias Context =
-    { resolveGlobalReference : ( Types.SheetId, Types.Name ) -> List ( Types.SheetId, Types.Name ) -> Types.ValueOrError
+    { resolveGlobalReference : ( Types.SheetId, Name ) -> List ( Types.SheetId, Name ) -> Types.ValueOrError
     , prefix : Types.SheetId
-    , ancestors : List ( Types.SheetId, Types.Name )
+    , ancestors : List ( Types.SheetId, Name )
     }
 
 
@@ -77,12 +78,12 @@ defaultCell =
     DataCell Types.StringType ""
 
 
-evalCell : Grid -> Context -> Types.Name -> Types.ValueOrError
+evalCell : Grid -> Context -> Name -> Types.ValueOrError
 evalCell (Grid data) =
     evalCell_ data
 
 
-evalCell_ : GridData -> Context -> Types.Name -> Types.ValueOrError
+evalCell_ : GridData -> Context -> Name -> Types.ValueOrError
 evalCell_ data context cellRef =
     let
         formulaContext : Formula.Context Types.SheetId
@@ -112,9 +113,9 @@ evalCell_ data context cellRef =
         |> Result.andThen help
 
 
-getCell : Types.Name -> GridData -> Result Types.Error Cell
+getCell : Name -> GridData -> Result Types.Error Cell
 getCell cellName data =
-    Dict.get cellName data.cells
+    Dict.get (Name.toString cellName) data.cells
         |> Result.fromMaybe (Types.UndefinedLocalReferenceError cellName)
 
 
@@ -123,7 +124,7 @@ getCell cellName data =
 
 
 type Msg
-    = StartEditing Types.Name
+    = StartEditing Name
     | UpdateEdit UserInput
     | OnClickCellTypeBtn
     | OnClickCellDataTypeBtn
@@ -213,13 +214,13 @@ commitData data =
             (\( name, cell ) ->
                 if cell == defaultCell then
                     { data
-                        | cells = Dict.remove name data.cells
+                        | cells = Dict.remove (Name.toString name) data.cells
                         , editState = Nothing
                     }
 
                 else
                     { data
-                        | cells = Dict.insert name cell data.cells
+                        | cells = Dict.insert (Name.toString name) cell data.cells
                         , editState = Nothing
                     }
             )
@@ -239,9 +240,6 @@ view { toMsg, getSheetName, context } (Grid ({ editState } as data)) =
         numberOfColumns =
             20
 
-        toLetter i =
-            Char.fromCode (i - 1 + Char.toCode 'A') |> S.fromChar
-
         mapColumns f =
             L.range 1 numberOfColumns |> L.map f
 
@@ -259,7 +257,7 @@ view { toMsg, getSheetName, context } (Grid ({ editState } as data)) =
             th [] []
                 :: mapColumns
                     (\col ->
-                        myTh [ css [ top (px 0) ] ] [ text <| toLetter col ]
+                        myTh [ css [ top (px 0) ] ] [ text <| Name.intToLetter col ]
                     )
 
         rowHeader row =
@@ -277,8 +275,7 @@ view { toMsg, getSheetName, context } (Grid ({ editState } as data)) =
         cellView row col =
             let
                 cellName =
-                    [ col |> toLetter, row |> S.fromInt ]
-                        |> S.concat
+                    Name.fromCoord col row
 
                 defaultCellView =
                     td

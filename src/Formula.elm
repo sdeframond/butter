@@ -6,10 +6,10 @@ module Formula exposing
     , initialInput
     , isValid
     , parseInt
-    , parseName
     , sourceView
     )
 
+import Name exposing (Name)
 import Parser as P exposing ((|.), (|=))
 import Set
 import Types
@@ -28,7 +28,7 @@ type alias UserInput =
 
 
 type alias OriginalSheetName =
-    String
+    Name
 
 
 isValid : Formula -> Bool
@@ -46,11 +46,11 @@ initialInput (Formula input _) =
     input
 
 
-sourceView : (Types.SheetId -> Maybe Types.Name) -> Formula -> Maybe String
+sourceView : (Types.SheetId -> Maybe Name) -> Formula -> Maybe String
 sourceView getSheetName (Formula originalSource astResult) =
     let
-        referenceToString : Result OriginalSheetName Types.SheetId -> Maybe String
-        referenceToString refResult =
+        referenceToName : Result OriginalSheetName Types.SheetId -> Maybe Name
+        referenceToName refResult =
             case refResult of
                 Ok ref ->
                     getSheetName ref
@@ -61,7 +61,7 @@ sourceView getSheetName (Formula originalSource astResult) =
         astToString : Ast (Result OriginalSheetName Types.SheetId) -> Maybe String
         astToString ast =
             ast
-                |> mapSheetReferences referenceToString
+                |> mapSheetReferences referenceToName
                 |> toString
     in
     astResult
@@ -69,7 +69,7 @@ sourceView getSheetName (Formula originalSource astResult) =
         |> Result.withDefault (Just originalSource)
 
 
-fromSource : (Types.Name -> Maybe Types.SheetId) -> UserInput -> Formula
+fromSource : (Name -> Maybe Types.SheetId) -> UserInput -> Formula
 fromSource getSheetId src =
     src
         |> parse
@@ -83,10 +83,10 @@ fromSource getSheetId src =
 
 
 type alias Context sheetRefType =
-    { resolveGlobalReference : ( sheetRefType, Types.Name ) -> List ( sheetRefType, Types.Name ) -> Types.ValueOrError
-    , resolveLocalReference : Types.Name -> List ( sheetRefType, Types.Name ) -> Types.ValueOrError
+    { resolveGlobalReference : ( sheetRefType, Name ) -> List ( sheetRefType, Name ) -> Types.ValueOrError
+    , resolveLocalReference : Name -> List ( sheetRefType, Name ) -> Types.ValueOrError
     , prefix : sheetRefType
-    , ancestors : List ( sheetRefType, Types.Name )
+    , ancestors : List ( sheetRefType, Name )
     }
 
 
@@ -168,8 +168,8 @@ evalLiteral lit =
 type Ast sheetRefType
     = BinOp BinaryOp (Ast sheetRefType) (Ast sheetRefType)
     | FormulaLiteral Literal
-    | LocalReference String
-    | GlobalReference sheetRefType String
+    | LocalReference Name
+    | GlobalReference sheetRefType Name
 
 
 type Literal
@@ -227,7 +227,7 @@ filterMapReferences fn ast =
 -- TO STRING
 
 
-toString : Ast (Maybe String) -> Maybe String
+toString : Ast (Maybe Name) -> Maybe String
 toString ast =
     case ast of
         BinOp op a b ->
@@ -242,11 +242,16 @@ toString ast =
             Just ("\"" ++ s ++ "\"")
 
         LocalReference ref ->
-            Just ref
+            Just (Name.toString ref)
 
         GlobalReference maybeSheetRef cellRef ->
             maybeSheetRef
-                |> Maybe.map (\str -> str ++ "." ++ cellRef)
+                |> Maybe.map
+                    (\name ->
+                        Name.toString name
+                            ++ "."
+                            ++ Name.toString cellRef
+                    )
 
 
 binaryOpToString : BinaryOp -> String
@@ -263,17 +268,17 @@ binaryOpToString op =
 -- PARSE
 
 
-parse : String -> Result Error (Ast String)
+parse : String -> Result Error (Ast Name)
 parse s =
     P.run (parser |. P.end) s |> Result.mapError (Error s)
 
 
-parser : P.Parser (Ast String)
+parser : P.Parser (Ast Name)
 parser =
     term |> P.andThen (parserHelp [])
 
 
-term : P.Parser (Ast String)
+term : P.Parser (Ast Name)
 term =
     P.succeed identity
         |= P.oneOf
@@ -287,7 +292,7 @@ term =
         |. P.spaces
 
 
-parserHelp : List ( BinaryOp, Ast String ) -> Ast String -> P.Parser (Ast String)
+parserHelp : List ( BinaryOp, Ast Name ) -> Ast Name -> P.Parser (Ast Name)
 parserHelp reversedOps expr =
     P.oneOf
         [ P.succeed Tuple.pair
@@ -308,7 +313,7 @@ operatorParser =
         ]
 
 
-finalize : List ( BinaryOp, Ast String ) -> Ast String -> Ast String
+finalize : List ( BinaryOp, Ast Name ) -> Ast Name -> Ast Name
 finalize reversedOps finalExpr =
     case reversedOps of
         [] ->
@@ -318,29 +323,20 @@ finalize reversedOps finalExpr =
             BinOp op (finalize previousOps expr) finalExpr
 
 
-nameParser : P.Parser String
-nameParser =
-    P.variable
-        { start = Char.isAlpha
-        , inner = Char.isAlphaNum
-        , reserved = Set.empty
-        }
-
-
-referenceParser : P.Parser (Ast String)
+referenceParser : P.Parser (Ast Name)
 referenceParser =
     P.succeed identity
-        |= nameParser
+        |= Name.parser
         |> P.andThen referenceHelp
 
 
-referenceHelp : String -> P.Parser (Ast String)
-referenceHelp str =
+referenceHelp : Name -> P.Parser (Ast Name)
+referenceHelp name =
     P.oneOf
-        [ P.succeed (GlobalReference str)
+        [ P.succeed (GlobalReference name)
             |. P.symbol "."
-            |= nameParser
-        , P.succeed (LocalReference str)
+            |= Name.parser
+        , P.succeed (LocalReference name)
         ]
 
 
@@ -357,19 +353,6 @@ intParser =
 
 
 -- EXPOSED PARSING HELPERS
-
-
-parseName : String -> Result Error String
-parseName s =
-    let
-        parser_ =
-            P.succeed identity
-                |. P.spaces
-                |= nameParser
-                |. P.spaces
-                |. P.end
-    in
-    P.run parser_ s |> Result.mapError (Error s)
 
 
 parseInt : String -> Result Error Int

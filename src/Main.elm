@@ -3,15 +3,14 @@ module Main exposing (main)
 import Browser
 import Css exposing (..)
 import Css.Global as Global
-import Dict as D exposing (Dict)
-import Formula
 import Html.Styled exposing (..)
 import Html.Styled.Attributes as Attr exposing (css)
 import Html.Styled.Events as Events
+import Name exposing (Name)
 import Result as R
 import Sheet exposing (Sheet)
 import Tuple as T
-import Types exposing (Name)
+import Types
 import ZipList as ZL exposing (ZipList)
 
 
@@ -35,7 +34,7 @@ main =
 
 type alias Model =
     { sheets : ZipList ( Types.SheetId, Sheet )
-    , sheetIds : Dict Types.Name Types.SheetId
+    , sheetIds : Name.Store Types.SheetId
     , nextSheetId : Types.SheetId
     , edit : EditStatus
     }
@@ -43,7 +42,7 @@ type alias Model =
 
 type EditStatus
     = NotEditing
-    | EditingSheetName Types.SheetId Name
+    | EditingSheetName Types.SheetId String
 
 
 
@@ -54,13 +53,13 @@ init : {} -> ( Model, Cmd Msg )
 init _ =
     let
         sheet =
-            Sheet.initTable "Sheet1"
+            Sheet.initTable (Name.fromSheetId initId)
 
         initId =
             1
     in
     ( { sheets = ZL.singleton ( initId, sheet )
-      , sheetIds = D.fromList [ ( Sheet.getName sheet, initId ) ]
+      , sheetIds = Name.fromList [ ( Sheet.getName sheet, initId ) ]
       , nextSheetId = initId + 1
       , edit = NotEditing
       }
@@ -82,7 +81,7 @@ currentSheetId { sheets } =
     ZL.current sheets |> T.first
 
 
-currentSheetName : Model -> Types.Name
+currentSheetName : Model -> Name
 currentSheetName { sheets } =
     ZL.current sheets |> T.second |> Sheet.getName
 
@@ -103,16 +102,16 @@ type Position a
     | After a
 
 
-selectSheet : Types.SheetId -> Model -> Result Types.Error Model
+selectSheet : Types.SheetId -> Model -> Maybe Model
 selectSheet selectedId model =
     ZL.select (T.first >> (==) selectedId) model.sheets
-        |> R.fromMaybe (Types.UndefinedSheetError (selectedId |> String.fromInt))
-        |> R.map (\newSheets -> { model | sheets = newSheets })
+        -- |> R.fromMaybe (Types.UndefinedSheetError (selectedId |> String.fromInt))
+        |> Maybe.map (\newSheets -> { model | sheets = newSheets })
 
 
-sheetExists : Types.Name -> Model -> Bool
+sheetExists : Name -> Model -> Bool
 sheetExists name { sheetIds } =
-    D.member name sheetIds
+    Name.member name sheetIds
 
 
 getSheet : Types.SheetId -> Model -> Maybe Sheet
@@ -121,29 +120,28 @@ getSheet sheetId model =
         |> Maybe.map T.second
 
 
-getSheetName : Model -> Types.SheetId -> Maybe Types.Name
+getSheetName : Model -> Types.SheetId -> Maybe Name
 getSheetName model sheetId =
     getSheet sheetId model |> Maybe.map Sheet.getName
 
 
-insertSheetHelp : Sheet -> Model -> Result Types.Error Model
-insertSheetHelp sheet model =
+insertSheet : Sheet -> Model -> Model
+insertSheet sheet model =
     if sheetExists (Sheet.getName sheet) model then
-        Err (Types.DuplicateSheetNameError (Sheet.getName sheet))
+        model
 
     else
-        Ok <|
-            { model
-                | sheets = ZL.append [ ( model.nextSheetId, sheet ) ] model.sheets
-                , nextSheetId = model.nextSheetId + 1
-                , sheetIds = D.insert (Sheet.getName sheet) model.nextSheetId model.sheetIds
-            }
+        { model
+            | sheets = ZL.append [ ( model.nextSheetId, sheet ) ] model.sheets
+            , nextSheetId = model.nextSheetId + 1
+            , sheetIds = Name.insert (Sheet.getName sheet) model.nextSheetId model.sheetIds
+        }
 
 
-removeSheet : Types.SheetId -> Model -> Result Types.Error Model
+removeSheet : Types.SheetId -> Model -> Model
 removeSheet sheetId model =
     let
-        newSheetsRes =
+        maybeNewSheets =
             if sheetId == currentSheetId model then
                 ZL.removeCurrent model.sheets
                     |> Maybe.map
@@ -152,10 +150,9 @@ removeSheet sheetId model =
                             , maybeSheetName = Just (currentSheetName model)
                             }
                         )
-                    |> R.fromMaybe (Types.RemovingLastSheetError (currentSheetName model))
 
             else if ZL.map T.first model.sheets |> ZL.member sheetId then
-                Ok
+                Just
                     { newSheets =
                         ZL.filter (T.first >> (/=) sheetId) model.sheets
                             |> Maybe.withDefault model.sheets
@@ -163,31 +160,32 @@ removeSheet sheetId model =
                     }
 
             else
-                Err (Types.UndefinedSheetError (String.fromInt sheetId))
+                Nothing
     in
-    newSheetsRes
-        |> R.map
+    maybeNewSheets
+        |> Maybe.map
             (\{ newSheets, maybeSheetName } ->
                 { model
                     | sheets = newSheets
                     , sheetIds =
                         maybeSheetName
-                            |> Maybe.map (\name -> D.remove name model.sheetIds)
+                            |> Maybe.map (\name -> Name.remove name model.sheetIds)
                             |> Maybe.withDefault model.sheetIds
                 }
             )
+        |> Maybe.withDefault model
 
 
-renameSheet : Types.SheetId -> Types.Name -> Model -> Result Types.Error Model
-renameSheet sheetId newName model =
+renameSheet : Types.SheetId -> String -> Model -> Result Types.Error Model
+renameSheet sheetId input model =
     let
         updateSheetName : ( Name, Name ) -> Model -> Model
-        updateSheetName ( validNewName, oldName ) m =
+        updateSheetName ( newName, oldName ) m =
             let
                 renameSheet_ ( currentId, sheet ) =
                     T.pair currentId <|
                         if currentId == sheetId then
-                            Sheet.rename validNewName sheet
+                            Sheet.rename newName sheet
 
                         else
                             sheet
@@ -196,24 +194,24 @@ renameSheet sheetId newName model =
                 | sheets = ZL.map renameSheet_ m.sheets
                 , sheetIds =
                     m.sheetIds
-                        |> D.remove oldName
-                        |> D.insert validNewName sheetId
+                        |> Name.remove oldName
+                        |> Name.insert newName sheetId
             }
-    in
-    if sheetExists newName model then
-        Err (Types.DuplicateSheetNameError newName)
 
-    else
-        Formula.parseName newName
-            |> R.mapError (always Types.InvalidSheetNameError)
-            |> R.andThen
-                (\validNewName ->
-                    getSheetName model sheetId
-                        |> Maybe.map (T.pair validNewName)
-                        |> R.fromMaybe (Types.UnexpectedError ("Invalid SheetId: " ++ String.fromInt sheetId))
-                )
-            |> R.map updateSheetName
-            |> R.map (\updater -> updater model)
+        help name =
+            if sheetExists name model then
+                Err (Types.DuplicateSheetNameError name)
+
+            else
+                getSheetName model sheetId
+                    |> Maybe.map (T.pair name)
+                    |> R.fromMaybe (Types.UnexpectedError ("Invalid SheetId: " ++ String.fromInt sheetId))
+                    |> R.map updateSheetName
+                    |> R.map (\updater -> updater model)
+    in
+    Name.fromString input
+        |> Result.fromMaybe Types.InvalidSheetNameError
+        |> Result.andThen help
 
 
 
@@ -233,14 +231,13 @@ subscriptions model =
 
 type Msg
     = SheetMsg Sheet.Msg
-      -- | MakePivotTable
     | InsertSheet Sheet
     | InsertGridSheet
     | InsertTableSheet
     | SelectSheet Types.SheetId
     | RemoveSheet Types.SheetId
     | EditSheet ( Types.SheetId, Sheet )
-    | UpdateSheetName Types.Name
+    | UpdateSheetName String
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -251,89 +248,85 @@ update msg model =
                 | sheets = ZL.setCurrent ( currentSheetId model, newSheet ) model.sheets
             }
 
-        insertSheet_ sheet =
-            ( insertSheetHelp sheet model |> Result.withDefault model, Cmd.none )
-
         commitSheetName m =
             case m.edit of
-                EditingSheetName sheetId newName ->
+                EditingSheetName sheetId input ->
                     { m | edit = NotEditing }
-                        |> renameSheet sheetId newName
+                        |> renameSheet sheetId input
                         -- TODO log errors
                         |> R.withDefault m
 
                 NotEditing ->
                     m
+
+        commitEdit : Model -> Model
+        commitEdit m =
+            let
+                setCurrentSheet sheet =
+                    { m
+                        | sheets =
+                            ZL.setCurrent
+                                ( currentSheetId m, sheet )
+                                m.sheets
+                    }
+            in
+            currentSheet m
+                |> Sheet.commitEdit
+                |> setCurrentSheet
     in
     case Debug.log "update msg" msg of
         SheetMsg sheetMsg ->
-            Sheet.update (getSheetId model) sheetMsg (currentSheet model)
+            Sheet.update (\name -> Name.get name model.sheetIds) sheetMsg (currentSheet model)
                 |> Tuple.mapFirst (updateSheet model >> commitSheetName)
                 |> Tuple.mapSecond (Cmd.map SheetMsg)
 
         InsertSheet sheet ->
-            insertSheet_ sheet
+            ( insertSheet sheet model
+            , Cmd.none
+            )
 
         InsertGridSheet ->
-            insertSheet_ (Sheet.initGrid <| "Sheet" ++ String.fromInt model.nextSheetId)
+            ( insertSheet (Sheet.initGrid <| Name.fromSheetId model.nextSheetId) model
+            , Cmd.none
+            )
 
         InsertTableSheet ->
-            insertSheet_ (Sheet.initTable <| "Sheet" ++ String.fromInt model.nextSheetId)
+            ( insertSheet (Sheet.initTable <| Name.fromSheetId model.nextSheetId) model
+            , Cmd.none
+            )
 
         SelectSheet sheetId ->
             ( model
                 |> commitEdit
                 |> commitSheetName
                 |> selectSheet sheetId
-                |> Result.withDefault model
+                |> Maybe.withDefault model
             , Cmd.none
             )
 
         RemoveSheet sheetId ->
             ( removeSheet sheetId model
-                |> Result.withDefault model
             , Cmd.none
             )
 
         EditSheet ( sheetId, sheet ) ->
-            ( { model | edit = EditingSheetName sheetId (Sheet.getName sheet) }
+            ( { model | edit = EditingSheetName sheetId (Sheet.getName sheet |> Name.toString) }
                 |> commitEdit
             , Cmd.none
             )
 
-        UpdateSheetName sheetName ->
+        UpdateSheetName input ->
             ( { model
                 | edit =
                     case model.edit of
-                        EditingSheetName oldName _ ->
-                            EditingSheetName oldName sheetName
+                        EditingSheetName sheetId _ ->
+                            EditingSheetName sheetId input
 
                         _ ->
                             model.edit
               }
             , Cmd.none
             )
-
-
-commitEdit : Model -> Model
-commitEdit model =
-    let
-        setCurrentSheet sheet =
-            { model
-                | sheets =
-                    ZL.setCurrent
-                        ( currentSheetId model, sheet )
-                        model.sheets
-            }
-    in
-    currentSheet model
-        |> Sheet.commitEdit
-        |> setCurrentSheet
-
-
-getSheetId : Model -> Types.Name -> Maybe Types.SheetId
-getSheetId model name =
-    D.get name model.sheetIds
 
 
 
@@ -381,7 +374,9 @@ documentView model =
         sheetConfig : Sheet.Config Msg
         sheetConfig =
             { toMsg = SheetMsg
-            , insertSheet = InsertSheet
+            , insertPivotTable =
+                Sheet.initPivotTable (Name.fromSheetId model.nextSheetId)
+                    >> InsertSheet
             , getSheetName = getSheetName model
             , context =
                 { prefix = currentSheetId model
@@ -435,7 +430,7 @@ sheetSelector model =
                         , Events.onClick <| SelectSheet sheetId
                         , Events.onDoubleClick <| EditSheet ( sheetId, sheet )
                         ]
-                        [ text (Sheet.getName sheet)
+                        [ text (Sheet.getName sheet |> Name.toString)
                         , span [ Events.onClick <| RemoveSheet sheetId ]
                             [ text "[x]" ]
                         ]

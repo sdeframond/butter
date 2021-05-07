@@ -1,12 +1,12 @@
 module MyPivotTable exposing (Msg, PivotTable, init, subscriptions, update, view)
 
 import Css exposing (..)
-import Dict
 import DnDList.Groups as DnDList
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as Attr
+import Name exposing (Name)
 import PivotTable as PT
-import Types exposing (Name)
+import Types
 
 
 dndConfig : DnDList.Config Draggable
@@ -111,7 +111,7 @@ tableView state =
             state.fields
                 |> List.filter (.group >> (==) group)
                 |> List.filterMap .maybeName
-                |> List.map Dict.get
+                |> List.map Name.get
                 |> List.map
                     (\f ->
                         f >> Maybe.map Types.valueOrErrorToString >> Maybe.withDefault ""
@@ -180,7 +180,7 @@ groupFieldView toMsg dnd maybeDragItem label currentGroup indexedFields =
                     if dragIndex /= index then
                         H.li
                             (Attr.id fieldId :: dndEvents .dropEvents)
-                            [ H.text name ]
+                            [ H.text (Name.toString name) ]
 
                     else
                         H.li [ Attr.id fieldId ] [ H.text "[-----]" ]
@@ -188,7 +188,7 @@ groupFieldView toMsg dnd maybeDragItem label currentGroup indexedFields =
                 ( Just name, Nothing ) ->
                     H.li
                         (Attr.id fieldId :: dndEvents .dragEvents)
-                        [ H.text name ]
+                        [ H.text (Name.toString name) ]
 
                 ( Nothing, Just _ ) ->
                     H.li
@@ -231,4 +231,4 @@ ghostField toMsg dnd maybeDragItem =
         Just name ->
             H.li
                 (dndSystem.ghostStyles dnd |> List.map (Attr.fromUnstyled >> Attr.map toMsg))
-                [ H.text name ]
+                [ H.text (Name.toString name) ]

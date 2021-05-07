@@ -19,31 +19,32 @@ import Grid exposing (Grid)
 import Html.Styled exposing (Html)
 import MyPivotTable exposing (PivotTable)
 import MyTable as Table exposing (Table)
+import Name exposing (Name)
 import Types
 
 
 type Sheet
-    = GridSheet Types.Name Grid
-    | TableSheet Types.Name Table
-    | PivotTableSheet Types.Name PivotTable
+    = GridSheet Name Grid
+    | TableSheet Name Table
+    | PivotTableSheet Name PivotTable
 
 
-initGrid : Types.Name -> Sheet
+initGrid : Name -> Sheet
 initGrid name =
     GridSheet name Grid.init
 
 
-initTable : Types.Name -> Sheet
+initTable : Name -> Sheet
 initTable name =
     TableSheet name Table.empty
 
 
-initPivotTable : Types.Name -> Types.Table -> Sheet
+initPivotTable : Name -> Types.Table -> Sheet
 initPivotTable name table =
     PivotTableSheet name (MyPivotTable.init table)
 
 
-getName : Sheet -> Types.Name
+getName : Sheet -> Name
 getName sheet =
     case sheet of
         GridSheet name _ ->
@@ -56,7 +57,7 @@ getName sheet =
             name
 
 
-rename : Types.Name -> Sheet -> Sheet
+rename : Name -> Sheet -> Sheet
 rename newName sheet =
     case sheet of
         GridSheet _ sheetData ->
@@ -85,7 +86,7 @@ type Msg
     | PivotTableMsg MyPivotTable.Msg
 
 
-update : (Types.Name -> Maybe Types.SheetId) -> Msg -> Sheet -> ( Sheet, Cmd Msg )
+update : (Name -> Maybe Types.SheetId) -> Msg -> Sheet -> ( Sheet, Cmd Msg )
 update getSheetId msg sheet =
     case ( msg, sheet ) of
         ( GridMsg gridMsg, GridSheet name grid ) ->
@@ -125,7 +126,7 @@ type alias Context =
     Grid.Context
 
 
-eval : Types.Name -> Context -> Sheet -> Types.ValueOrError
+eval : Name -> Context -> Sheet -> Types.ValueOrError
 eval ref context sheet =
     case sheet of
         GridSheet _ grid ->
@@ -137,8 +138,8 @@ eval ref context sheet =
 
 type alias Config msg =
     { toMsg : Msg -> msg
-    , insertSheet : Sheet -> msg
-    , getSheetName : Types.SheetId -> Maybe Types.Name
+    , insertPivotTable : Types.Table -> msg
+    , getSheetName : Types.SheetId -> Maybe Name
     , context : Context
     }
 
@@ -160,10 +161,9 @@ view config sheet =
         tableConfig =
             { toMsg = TableMsg >> config.toMsg
             , getSheetName = config.getSheetName
-            , makePivotTable =
+            , insertPivotTable =
                 Table.eval tableContext
-                    >> initPivotTable "CHANGEME"
-                    >> config.insertSheet
+                    >> config.insertPivotTable
             , context = tableContext
             }
     in

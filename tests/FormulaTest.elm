@@ -2,7 +2,9 @@ module FormulaTest exposing (..)
 
 import Expect
 import Formula
+import Helpers exposing (testCollection)
 import List as L
+import Name exposing (Name)
 import Test exposing (..)
 import Types exposing (Value(..))
 
@@ -10,14 +12,6 @@ import Types exposing (Value(..))
 suite : Test
 suite =
     let
-        testCollection f collection =
-            L.map
-                (\( caseName, input, output ) ->
-                    test caseName
-                        (\_ -> Expect.equal (f input) output)
-                )
-                collection
-
         mockContext : Formula.Context Types.SheetId
         mockContext =
             { resolveGlobalReference = \_ _ -> Ok (IntValue 1337)
@@ -35,10 +29,10 @@ suite =
             Formula.fromSource alwaysId123 input
                 |> Formula.eval mockContext
 
-        sourceView : (String -> Maybe Types.SheetId) -> String -> Maybe String
+        sourceView : (Name -> Maybe Types.SheetId) -> String -> Maybe String
         sourceView getSheetId =
             Formula.fromSource getSheetId
-                >> Formula.sourceView (always (Just "someref"))
+                >> Formula.sourceView (always (Just (Name.fromSheetId 1)))
     in
     describe "Formula"
         [ -- TODO: add fuzzing when it will be possible to make advanced string fuzzers.
@@ -79,7 +73,7 @@ suite =
                 , ( "string", "\"a\"", Just "\"a\"" )
                 , ( "simple addition", "1 + 2", Just "1+2" )
                 , ( "local ref", "foo123", Just "foo123" )
-                , ( "absolute ref to existing value", "foo123.bar123", Just "someref.bar123" )
+                , ( "absolute ref to existing value", "foo123.bar123", Just "Sheet1.bar123" )
                 ]
                 ++ testCollection (sourceView (always Nothing))
                     [ ( "fallback on user input when a reference is not defined", "foo123.bar123", Just "foo123.bar123" )
@@ -110,22 +104,6 @@ suite =
                     [ ( "empty string", "", Err Nothing )
                     , ( "not a digit", "foo", Err Nothing )
                     , ( "trailing alpha", "123foo", Err Nothing )
-                    ]
-            ]
-        , describe "parseName" <|
-            [ describe "when valid" <|
-                testCollection Formula.parseName
-                    [ ( "simple name", "foo", Ok "foo" )
-                    , ( "with trailing digits", "foo123", Ok "foo123" )
-                    , ( "with leading space", "   foo", Ok "foo" )
-                    , ( "with trailing space", "foo   ", Ok "foo" )
-                    ]
-            , describe "when not valid" <|
-                testCollection (Formula.parseName >> Result.mapError (always Nothing))
-                    [ ( "empty string", "", Err Nothing )
-                    , ( "starts with a digit", "123foo", Err Nothing )
-                    , ( "contains a space", "foo bar", Err Nothing )
-                    , ( "contains a dot", "foo.bar", Err Nothing )
                     ]
             ]
         ]
