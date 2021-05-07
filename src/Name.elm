@@ -7,7 +7,6 @@ module Name exposing
     , fromString
     , get
     , insert
-    , intToLetter
     , matchesString
     , member
     , parser
@@ -18,6 +17,7 @@ module Name exposing
 
 import Dict exposing (Dict)
 import Parser as P exposing ((|.), (|=))
+import PositiveInt exposing (PositiveInt)
 import Set
 
 
@@ -42,22 +42,14 @@ fromString input =
     P.run parser_ input |> Result.toMaybe
 
 
-fromSheetId : Int -> Name
-fromSheetId id =
-    Name ("Sheet" ++ String.fromInt id)
+fromSheetId : PositiveInt -> Name
+fromSheetId i =
+    Name ("Sheet" ++ PositiveInt.toString i)
 
 
-intToLetter : Int -> String
-intToLetter i =
-    Char.fromCode (i - 1 + Char.toCode 'A')
-        |> String.fromChar
-
-
-fromCoord : Int -> Int -> Name
+fromCoord : PositiveInt -> PositiveInt -> Name
 fromCoord x y =
-    [ x |> intToLetter, y |> String.fromInt ]
-        |> String.concat
-        |> Name
+    Name (PositiveInt.toLetters x ++ PositiveInt.toString y)
 
 
 parser : P.Parser Name

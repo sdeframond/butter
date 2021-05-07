@@ -3,6 +3,7 @@ module NameTest exposing (..)
 import Expect
 import Helpers exposing (testCollection)
 import Name
+import PositiveInt
 import Test exposing (..)
 
 
@@ -27,14 +28,14 @@ suite =
             ]
         , test "fromSheetId produces a valid name" <|
             \_ ->
-                Name.fromSheetId 1
+                Name.fromSheetId PositiveInt.one
                     |> Name.toString
                     |> Name.fromString
                     |> Maybe.map Name.toString
                     |> Expect.equal (Just "Sheet1")
         , test "fromCoord produces a valid name" <|
             \_ ->
-                Name.fromCoord 1 1
+                Name.fromCoord PositiveInt.one PositiveInt.one
                     |> Name.toString
                     |> Name.fromString
                     |> Maybe.map Name.toString

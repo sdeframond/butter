@@ -11,6 +11,7 @@ module Types exposing
     )
 
 import Name
+import PositiveInt exposing (PositiveInt)
 
 
 type Error
@@ -35,7 +36,7 @@ type alias LocatedName =
 
 
 type alias SheetId =
-    Int
+    PositiveInt
 
 
 type Value

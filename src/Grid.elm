@@ -18,7 +18,7 @@ import Html.Styled.Attributes exposing (css, value)
 import Html.Styled.Events exposing (onClick, onInput)
 import List as L
 import Name exposing (Name)
-import String as S
+import PositiveInt
 import Types exposing (DataType(..), Error(..), Value(..))
 import Ui
 
@@ -241,7 +241,7 @@ view { toMsg, getSheetName, context } (Grid ({ editState } as data)) =
             20
 
         mapColumns f =
-            L.range 1 numberOfColumns |> L.map f
+            PositiveInt.range numberOfColumns |> L.map f
 
         blueGrey =
             rgb 220 220 240
@@ -257,11 +257,11 @@ view { toMsg, getSheetName, context } (Grid ({ editState } as data)) =
             th [] []
                 :: mapColumns
                     (\col ->
-                        myTh [ css [ top (px 0) ] ] [ text <| Name.intToLetter col ]
+                        myTh [ css [ top (px 0) ] ] [ text <| PositiveInt.toLetters col ]
                     )
 
         rowHeader row =
-            myTh [ css [ left (px 0), position sticky ] ] [ text <| S.fromInt row ]
+            myTh [ css [ left (px 0), position sticky ] ] [ row |> PositiveInt.toString |> text ]
 
         cellSource cell =
             case cell of
@@ -314,7 +314,7 @@ view { toMsg, getSheetName, context } (Grid ({ editState } as data)) =
                     defaultCellView
 
         rows =
-            L.range 1 numberOfRow
+            PositiveInt.range numberOfRow
                 |> L.map
                     (\row ->
                         tr [] <|

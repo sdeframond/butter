@@ -3,8 +3,8 @@ module FormulaTest exposing (..)
 import Expect
 import Formula
 import Helpers exposing (testCollection)
-import List as L
 import Name exposing (Name)
+import PositiveInt
 import Test exposing (..)
 import Types exposing (Value(..))
 
@@ -16,23 +16,22 @@ suite =
         mockContext =
             { resolveGlobalReference = \_ _ -> Ok (IntValue 1337)
             , resolveLocalReference = \_ _ -> Ok (IntValue 1338)
-            , prefix = 0
+            , prefix = PositiveInt.one
             , ancestors = []
             }
 
-        alwaysId123 =
-            -- String.filter Char.isDigit >> String.toInt
-            always (Just 123)
+        alwaysId1 =
+            always (Just PositiveInt.one)
 
         evalString : String -> Types.ValueOrError
         evalString input =
-            Formula.fromSource alwaysId123 input
+            Formula.fromSource alwaysId1 input
                 |> Formula.eval mockContext
 
         sourceView : (Name -> Maybe Types.SheetId) -> String -> Maybe String
         sourceView getSheetId =
             Formula.fromSource getSheetId
-                >> Formula.sourceView (always (Just (Name.fromSheetId 1)))
+                >> Formula.sourceView (always (Just (Name.fromSheetId PositiveInt.one)))
     in
     describe "Formula"
         [ -- TODO: add fuzzing when it will be possible to make advanced string fuzzers.
@@ -55,18 +54,18 @@ suite =
         , describe "initialInput"
             [ test "return the unmodified user input when valid" <|
                 \_ ->
-                    Formula.fromSource alwaysId123 "1 + 1"
+                    Formula.fromSource alwaysId1 "1 + 1"
                         |> Formula.initialInput
                         -- instead of "1+1"
                         |> Expect.equal "1 + 1"
             , test "return the unmodified user input when invalid" <|
                 \_ ->
-                    Formula.fromSource alwaysId123 "foo bar baz"
+                    Formula.fromSource alwaysId1 "foo bar baz"
                         |> Formula.initialInput
                         |> Expect.equal "foo bar baz"
             ]
         , describe "sourceView" <|
-            testCollection (sourceView alwaysId123)
+            testCollection (sourceView alwaysId1)
                 [ ( "empty", "", Just "" )
                 , ( "integer", "1", Just "1" )
                 , ( "negative integer", "-1", Just "-1" )
@@ -81,12 +80,12 @@ suite =
         , describe "isValid"
             [ test "when valid" <|
                 \_ ->
-                    Formula.fromSource alwaysId123 "thisisvalid"
+                    Formula.fromSource alwaysId1 "thisisvalid"
                         |> Formula.isValid
                         |> Expect.true "expected isValid to return True"
             , test "when not valid" <|
                 \_ ->
-                    Formula.fromSource alwaysId123 "this is not valid"
+                    Formula.fromSource alwaysId1 "this is not valid"
                         |> Formula.isValid
                         |> Expect.false "expected isValid to return False"
             ]

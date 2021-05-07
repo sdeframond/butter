@@ -7,6 +7,7 @@ import Html.Styled exposing (..)
 import Html.Styled.Attributes as Attr exposing (css)
 import Html.Styled.Events as Events
 import Name exposing (Name)
+import PositiveInt
 import Result as R
 import Sheet exposing (Sheet)
 import Tuple as T
@@ -56,11 +57,11 @@ init _ =
             Sheet.initTable (Name.fromSheetId initId)
 
         initId =
-            1
+            PositiveInt.one
     in
     ( { sheets = ZL.singleton ( initId, sheet )
       , sheetIds = Name.fromList [ ( Sheet.getName sheet, initId ) ]
-      , nextSheetId = initId + 1
+      , nextSheetId = PositiveInt.next initId
       , edit = NotEditing
       }
     , Cmd.none
@@ -133,7 +134,7 @@ insertSheet sheet model =
     else
         { model
             | sheets = ZL.append [ ( model.nextSheetId, sheet ) ] model.sheets
-            , nextSheetId = model.nextSheetId + 1
+            , nextSheetId = PositiveInt.next model.nextSheetId
             , sheetIds = Name.insert (Sheet.getName sheet) model.nextSheetId model.sheetIds
         }
 
@@ -205,7 +206,10 @@ renameSheet sheetId input model =
             else
                 getSheetName model sheetId
                     |> Maybe.map (T.pair name)
-                    |> R.fromMaybe (Types.UnexpectedError ("Invalid SheetId: " ++ String.fromInt sheetId))
+                    |> R.fromMaybe
+                        (Types.UnexpectedError
+                            ("Invalid SheetId: " ++ PositiveInt.toString sheetId)
+                        )
                     |> R.map updateSheetName
                     |> R.map (\updater -> updater model)
     in
