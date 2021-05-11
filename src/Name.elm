@@ -1,6 +1,10 @@
 module Name exposing
     ( Name
     , Store
+    , decoder
+    , empty
+    , encode
+    , encodeStore
     , fromCoord
     , fromList
     , fromSheetId
@@ -12,10 +16,13 @@ module Name exposing
     , parser
     , remove
     , removeString
+    , storeDecoder
     , toString
     )
 
 import Dict exposing (Dict)
+import Json.Decode as Decode
+import Json.Encode as Encode
 import Parser as P exposing ((|.), (|=))
 import PositiveInt exposing (PositiveInt)
 import Set
@@ -76,6 +83,11 @@ matchesString str1 (Name str2) =
 -- STORE
 
 
+empty : Store a
+empty =
+    Store Dict.empty
+
+
 get : Name -> Store a -> Maybe a
 get name (Store d) =
     Dict.get (toString name) d
@@ -108,3 +120,45 @@ removeString str (Store d) =
 member : Name -> Store a -> Bool
 member name (Store d) =
     Dict.member (toString name) d
+
+
+
+-- JSON
+
+
+decoder : Decode.Decoder Name
+decoder =
+    let
+        parse input =
+            fromString input
+                |> Maybe.map Decode.succeed
+                |> Maybe.withDefault (Decode.fail <| "Invalid name: " ++ input)
+    in
+    Decode.string |> Decode.andThen parse
+
+
+storeDecoder : Decode.Decoder a -> Decode.Decoder (Store a)
+storeDecoder itemDecoder =
+    let
+        checkKeys dict =
+            Dict.keys dict
+                |> List.map fromString
+                |> (\names ->
+                        if List.any ((==) Nothing) names then
+                            Decode.fail "All names must be valid"
+
+                        else
+                            Decode.succeed dict
+                   )
+    in
+    Decode.map Store (Decode.dict itemDecoder |> Decode.andThen checkKeys)
+
+
+encode : Name -> Encode.Value
+encode (Name str) =
+    Encode.string str
+
+
+encodeStore : (a -> Encode.Value) -> Store a -> Encode.Value
+encodeStore encodeItem (Store dict) =
+    Encode.dict identity encodeItem dict

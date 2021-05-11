@@ -2,8 +2,10 @@ module Grid exposing
     ( Config
     , Context
     , Grid
-    , Msg
+    , Msg(..)
     , commit
+    , decoder
+    , encode
     , evalCell
     , init
     , update
@@ -11,11 +13,13 @@ module Grid exposing
     )
 
 import Css exposing (..)
-import Dict exposing (Dict)
+import DecodeHelpers
 import Formula exposing (Formula)
 import Html.Styled as H exposing (..)
 import Html.Styled.Attributes exposing (css, value)
 import Html.Styled.Events exposing (onClick, onInput)
+import Json.Decode as Decode
+import Json.Encode as Encode
 import List as L
 import Name exposing (Name)
 import PositiveInt
@@ -33,7 +37,7 @@ type Grid
 
 type alias GridData =
     { editState : Maybe ( Name, Cell )
-    , cells : Dict String Cell
+    , cells : Name.Store Cell
     }
 
 
@@ -61,7 +65,7 @@ type alias Context =
 
 init : Grid
 init =
-    Grid { editState = Nothing, cells = Dict.empty }
+    Grid { editState = Nothing, cells = Name.empty }
 
 
 
@@ -115,7 +119,7 @@ evalCell_ data context cellRef =
 
 getCell : Name -> GridData -> Result Types.Error Cell
 getCell cellName data =
-    Dict.get (Name.toString cellName) data.cells
+    Name.get cellName data.cells
         |> Result.fromMaybe (Types.UndefinedLocalReferenceError cellName)
 
 
@@ -214,13 +218,13 @@ commitData data =
             (\( name, cell ) ->
                 if cell == defaultCell then
                     { data
-                        | cells = Dict.remove (Name.toString name) data.cells
+                        | cells = Name.remove name data.cells
                         , editState = Nothing
                     }
 
                 else
                     { data
-                        | cells = Dict.insert (Name.toString name) cell data.cells
+                        | cells = Name.insert name cell data.cells
                         , editState = Nothing
                     }
             )
@@ -368,3 +372,95 @@ cellPropertiesView toMsg cell =
                             text "String"
                     ]
         ]
+
+
+
+-- JSON
+
+
+jsonKeys :
+    { cellType : String
+    , formula : String
+    , data : String
+    , dataType : String
+    , input : String
+    , editState : String
+    , name : String
+    , cell : String
+    , cells : String
+    }
+jsonKeys =
+    { cellType = "type"
+    , formula = "formula"
+    , data = "data"
+    , dataType = "dataType"
+    , input = "input"
+    , editState = "editState"
+    , name = "name"
+    , cell = "cell"
+    , cells = "cells"
+    }
+
+
+decoder : (Name -> Maybe Types.SheetId) -> Decode.Decoder Grid
+decoder getSheetId =
+    Decode.map2 GridData
+        (Decode.map2 Tuple.pair
+            (Decode.field jsonKeys.name Name.decoder)
+            (Decode.field jsonKeys.cell <| cellDecoder getSheetId)
+            |> Decode.nullable
+            |> Decode.field jsonKeys.editState
+        )
+        (Decode.field jsonKeys.cells (Name.storeDecoder <| cellDecoder getSheetId))
+        |> Decode.map Grid
+
+
+cellDecoder : (Name -> Maybe Types.SheetId) -> Decode.Decoder Cell
+cellDecoder getSheetId =
+    Decode.field jsonKeys.cellType Decode.string
+        |> DecodeHelpers.switch "Invalid cell type"
+            [ ( jsonKeys.formula
+              , Decode.map FormulaCell
+                    (Decode.field jsonKeys.formula <| Formula.decoder getSheetId)
+              )
+            , ( jsonKeys.data
+              , Decode.map2 DataCell
+                    (Decode.field jsonKeys.dataType Types.dataTypeDecoder)
+                    (Decode.field jsonKeys.input Decode.string)
+              )
+            ]
+
+
+encode : (Types.SheetId -> Maybe Name) -> Grid -> Encode.Value
+encode getSheetName (Grid data) =
+    Encode.object
+        [ ( jsonKeys.editState
+          , data.editState
+                |> Maybe.map
+                    (\( name, cell ) ->
+                        Encode.object
+                            [ ( jsonKeys.name, Name.encode name )
+                            , ( jsonKeys.cell, encodeCell getSheetName cell )
+                            ]
+                    )
+                |> Maybe.withDefault Encode.null
+          )
+        , ( jsonKeys.cells, Name.encodeStore (encodeCell getSheetName) data.cells )
+        ]
+
+
+encodeCell : (Types.SheetId -> Maybe Name) -> Cell -> Encode.Value
+encodeCell getSheetName cell =
+    case cell of
+        FormulaCell formula ->
+            Encode.object
+                [ ( jsonKeys.cellType, Encode.string jsonKeys.formula )
+                , ( jsonKeys.formula, Formula.encode getSheetName formula )
+                ]
+
+        DataCell dataType input ->
+            Encode.object
+                [ ( jsonKeys.cellType, Encode.string jsonKeys.data )
+                , ( jsonKeys.dataType, Types.encodeDataType dataType )
+                , ( jsonKeys.input, Encode.string input )
+                ]

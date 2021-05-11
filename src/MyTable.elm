@@ -1,14 +1,16 @@
 module MyTable exposing
-    ( Msg
+    ( Msg(..)
     , Table
+    , decoder
     , empty
+    , encode
     , eval
     , update
     , view
     )
 
 import Css exposing (..)
-import Dict
+import DecodeHelpers
 import Formula exposing (Formula)
 import Html
 import Html.Styled as H
@@ -23,9 +25,11 @@ import Html.Styled as H
 import Html.Styled.Attributes as Attr exposing (css, value)
 import Html.Styled.Events exposing (keyCode, on, onClick, onInput)
 import Json.Decode as Decode
+import Json.Encode as Encode
 import List as L
 import Maybe as M
 import Name exposing (Name)
+import PositiveInt exposing (PositiveInt)
 import Table as T exposing (defaultCustomizations)
 import Types exposing (DataType(..), Error(..), ValueOrError)
 import Ui
@@ -40,11 +44,11 @@ type Table
 
 
 type alias TableData =
-    { fields : List FieldDefinition
+    { state : T.State
+    , editedCell : Maybe ( ( PositiveInt, Name ), String )
+    , fields : List FieldDefinition
     , rows : List Row
-    , state : T.State
-    , nextId : Int
-    , editedCell : Maybe ( ( Int, Name ), String )
+    , nextId : PositiveInt
     , fieldForm : FieldForm
     }
 
@@ -55,7 +59,7 @@ empty =
         { fields = []
         , rows = []
         , state = T.initialSort ""
-        , nextId = 1
+        , nextId = PositiveInt.one
         , editedCell = Nothing
         , fieldForm = emptyFieldForm
         }
@@ -88,11 +92,12 @@ type FieldType
 
 emptyFieldForm : FieldForm
 emptyFieldForm =
-    { name = Nothing, fieldType = DataField StringType }
+    -- { name = Nothing, fieldType = DataField StringType }
+    { name = Nothing, fieldType = FormulaField (Formula.fromSource (always Nothing) "") }
 
 
 type alias Row =
-    { id : Int, data : Name.Store String }
+    { id : PositiveInt, data : Name.Store String }
 
 
 
@@ -103,7 +108,7 @@ type Msg
     = SetTableState T.State
     | UpdateNewRowField Name String
     | KeyDown Int
-    | EditCell Int Name String
+    | EditCell PositiveInt Name String
     | UpdateEditedCell String
     | OnClickAddFieldBtn
     | OnInputNewFieldName String
@@ -121,6 +126,7 @@ update getSheetId msg (Table data) =
 updateData : (Name -> Maybe Types.SheetId) -> Msg -> TableData -> TableData
 updateData getSheetId msg data =
     let
+        commit : TableData -> TableData
         commit d =
             case d.editedCell of
                 Nothing ->
@@ -180,7 +186,7 @@ updateData getSheetId msg data =
                 { data
                     | fields = L.map resetEdit data.fields
                     , rows = editsToRow :: data.rows
-                    , nextId = data.nextId + 1
+                    , nextId = PositiveInt.next data.nextId
                 }
 
             else
@@ -416,7 +422,7 @@ sortableTableConfig { toMsg, context } { fields, editedCell } =
             }
     in
     T.customConfig
-        { toId = .id >> String.fromInt
+        { toId = .id >> PositiveInt.toString
         , toMsg = SetTableState >> toMsg
         , columns = fields |> L.map toColumn
         , customizations = customizations
@@ -568,3 +574,172 @@ evalField context fields ancestors field row =
 
         FormulaField formula ->
             Formula.eval formulaContext formula
+
+
+
+-- JSON
+
+
+jsonKeys :
+    { data : String
+    , dataType : String
+    , edit : String
+    , fieldForm : String
+    , fields : String
+    , formula : String
+    , id : String
+    , name : String
+    , nextId : String
+    , rows : String
+    , fieldType : String
+    , editedCell : String
+    }
+jsonKeys =
+    { editedCell = "editedCell"
+    , data = "data"
+    , dataType = "dataType"
+    , edit = "edit"
+    , fieldForm = "fieldForm"
+    , fields = "fields"
+    , formula = "formula"
+    , id = "id"
+    , name = "name"
+    , nextId = "nextId"
+    , rows = "rows"
+    , fieldType = "type"
+    }
+
+
+decoder : (Name -> Maybe Types.SheetId) -> Decode.Decoder Table
+decoder getSheetId =
+    Decode.map Table (tableDataDecoder getSheetId)
+
+
+tableDataDecoder : (Name -> Maybe Types.SheetId) -> Decode.Decoder TableData
+tableDataDecoder getSheetId =
+    Decode.map5 (TableData (T.initialSort ""))
+        (Decode.field jsonKeys.editedCell <| Decode.nullable editedCellDecoder)
+        (Decode.field jsonKeys.fields <| Decode.list (fieldDefinitionDecoder getSheetId))
+        (Decode.field jsonKeys.rows <| Decode.list rowDecoder)
+        (Decode.field jsonKeys.nextId PositiveInt.decoder)
+        (Decode.field jsonKeys.fieldForm <| fieldFormDecoder getSheetId)
+
+
+editedCellDecoder : Decode.Decoder ( ( PositiveInt, Name ), String )
+editedCellDecoder =
+    Decode.map2 Tuple.pair
+        (Decode.map2 Tuple.pair
+            (Decode.field jsonKeys.id PositiveInt.decoder)
+            (Decode.field jsonKeys.name Name.decoder)
+        )
+        (Decode.field jsonKeys.edit Decode.string)
+
+
+fieldDefinitionDecoder : (Name -> Maybe Types.SheetId) -> Decode.Decoder FieldDefinition
+fieldDefinitionDecoder getSheetId =
+    Decode.map3 FieldDefinition
+        (Decode.field jsonKeys.name Name.decoder)
+        (Decode.field jsonKeys.edit Decode.string)
+        |> fieldTypeSwitch getSheetId
+
+
+fieldTypeSwitch : (Name -> Maybe Types.SheetId) -> (Decode.Decoder FieldType -> Decode.Decoder a) -> Decode.Decoder a
+fieldTypeSwitch getSheetId makeField =
+    Decode.field jsonKeys.fieldType Decode.string
+        |> DecodeHelpers.switch "Invalid field type"
+            [ ( jsonKeys.formula
+              , Formula.decoder getSheetId
+                    |> Decode.map FormulaField
+                    |> Decode.field jsonKeys.formula
+              )
+            , ( jsonKeys.data
+              , Types.dataTypeDecoder
+                    |> Decode.map DataField
+                    |> Decode.field jsonKeys.dataType
+              )
+            ]
+        |> makeField
+
+
+rowDecoder : Decode.Decoder Row
+rowDecoder =
+    Decode.map2 Row
+        (Decode.field jsonKeys.id PositiveInt.decoder)
+        (Decode.field jsonKeys.data <| Name.storeDecoder Decode.string)
+
+
+fieldFormDecoder : (Name -> Maybe Types.SheetId) -> Decode.Decoder FieldForm
+fieldFormDecoder getSheetId =
+    Decode.map2 FieldForm
+        (Decode.field jsonKeys.name (Decode.nullable Name.decoder))
+        |> fieldTypeSwitch getSheetId
+
+
+encode : (Types.SheetId -> Maybe Name) -> Table -> Encode.Value
+encode getSheetName (Table data) =
+    Encode.object
+        [ ( jsonKeys.editedCell, data.editedCell |> Maybe.map encodeEditedCell |> Maybe.withDefault Encode.null )
+        , ( jsonKeys.fields, Encode.list (encodeFieldDefinition getSheetName) data.fields )
+        , ( jsonKeys.rows, Encode.list encodeRow data.rows )
+        , ( jsonKeys.nextId, PositiveInt.encode data.nextId )
+        , ( jsonKeys.fieldForm, encodeFieldForm getSheetName data.fieldForm )
+        ]
+
+
+encodeEditedCell : ( ( PositiveInt, Name ), String ) -> Encode.Value
+encodeEditedCell ( ( rowId, fieldName ), input ) =
+    Encode.object
+        [ ( jsonKeys.id, PositiveInt.encode rowId )
+        , ( jsonKeys.name, Name.encode fieldName )
+        , ( jsonKeys.edit, Encode.string input )
+        ]
+
+
+encodeFieldDefinition : (Types.SheetId -> Maybe Name) -> FieldDefinition -> Encode.Value
+encodeFieldDefinition getSheetName definition =
+    Encode.object
+        ([ ( jsonKeys.name, Name.encode definition.name )
+         , ( jsonKeys.edit, Encode.string definition.edit )
+         ]
+            ++ encodeFieldType getSheetName definition.fieldType
+        )
+
+
+encodeFieldType : (Types.SheetId -> Maybe Name) -> FieldType -> List ( String, Encode.Value )
+encodeFieldType getSheetName fieldType =
+    [ ( jsonKeys.fieldType
+      , Encode.string <|
+            case fieldType of
+                DataField _ ->
+                    jsonKeys.data
+
+                FormulaField _ ->
+                    jsonKeys.formula
+      )
+    , case fieldType of
+        DataField dataType ->
+            ( jsonKeys.dataType, Types.encodeDataType dataType )
+
+        FormulaField formula ->
+            ( jsonKeys.formula, Formula.encode getSheetName formula )
+    ]
+
+
+encodeRow : Row -> Encode.Value
+encodeRow row =
+    Encode.object
+        [ ( jsonKeys.id, PositiveInt.encode row.id )
+        , ( jsonKeys.data, Name.encodeStore Encode.string row.data )
+        ]
+
+
+encodeFieldForm : (Types.SheetId -> Maybe Name) -> FieldForm -> Encode.Value
+encodeFieldForm getSheetName form =
+    Encode.object
+        (( jsonKeys.name
+         , form.name
+            |> Maybe.map Name.encode
+            |> Maybe.withDefault Encode.null
+         )
+            :: encodeFieldType getSheetName form.fieldType
+        )

@@ -2,6 +2,8 @@ module ZipList exposing
     ( ZipList
     , append
     , current
+    , decoder
+    , encode
     , filter
     , get
     , map
@@ -15,6 +17,8 @@ module ZipList exposing
     )
 
 import Html exposing (a)
+import Json.Decode as Decode
+import Json.Encode as Encode
 import List as L
 
 
@@ -144,3 +148,37 @@ removeCurrent (ZipList { before_, after_ }) =
 
         _ ->
             Nothing
+
+
+
+-- JSON
+
+
+jsonKeys : { before : String, current : String, after : String }
+jsonKeys =
+    { before = "before"
+    , current = "current"
+    , after = "after"
+    }
+
+
+decoder : Decode.Decoder a -> Decode.Decoder (ZipList a)
+decoder itemDecoder =
+    Decode.map ZipList (dataDecoder itemDecoder)
+
+
+dataDecoder : Decode.Decoder a -> Decode.Decoder (Data a)
+dataDecoder itemDecoder =
+    Decode.map3 Data
+        (Decode.field jsonKeys.before (Decode.list itemDecoder))
+        (Decode.field jsonKeys.current itemDecoder)
+        (Decode.field jsonKeys.after (Decode.list itemDecoder))
+
+
+encode : (a -> Encode.Value) -> ZipList a -> Encode.Value
+encode encodeItem (ZipList { before_, current_, after_ }) =
+    Encode.object
+        [ ( jsonKeys.before, Encode.list encodeItem before_ )
+        , ( jsonKeys.current, encodeItem current_ )
+        , ( jsonKeys.after, Encode.list encodeItem after_ )
+        ]

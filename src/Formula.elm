@@ -1,6 +1,8 @@
 module Formula exposing
     ( Context
     , Formula
+    , decoder
+    , encode
     , eval
     , fromSource
     , initialInput
@@ -9,6 +11,8 @@ module Formula exposing
     , sourceView
     )
 
+import Json.Decode as Decode
+import Json.Encode as Encode
 import Name exposing (Name)
 import Parser as P exposing ((|.), (|=))
 import Set
@@ -123,7 +127,7 @@ evalAst context formulaAst =
 
         checkCycle path ancestors doEval =
             if List.member path ancestors then
-                Err (Types.CyclicReferenceError ancestors)
+                Err (Types.CyclicReferenceError (List.map Debug.toString ancestors))
 
             else
                 doEval (path :: ancestors)
@@ -366,3 +370,13 @@ parseInt str =
                 |. P.end
     in
     P.run parser_ str |> Result.mapError (Error str)
+
+
+decoder : (Name -> Maybe Types.SheetId) -> Decode.Decoder Formula
+decoder getSheetId =
+    Decode.string |> Decode.map (fromSource getSheetId)
+
+
+encode : (Types.SheetId -> Maybe Name) -> Formula -> Encode.Value
+encode getSheetName formula =
+    Encode.string (sourceView getSheetName formula |> Maybe.withDefault (initialInput formula))

@@ -36,21 +36,21 @@ suite =
     describe "Formula"
         [ -- TODO: add fuzzing when it will be possible to make advanced string fuzzers.
           -- See https://github.com/elm-explorations/test/issues/90
-          describe "eval" <|
-            testCollection evalString
-                [ ( "empty", "", Err Types.ParsingError )
-                , ( "invalid input 1", "this is not valid", Err Types.ParsingError )
-                , ( "integer", "1", Ok (IntValue 1) )
-                , ( "negative integer", "-1", Ok (IntValue -1) )
-                , ( "string", "\"a\"", Ok (StringValue "a") )
-                , ( "local ref", "foo123", Ok (IntValue 1338) )
-                , ( "trailing space after ref", "thisisvalid ", Ok (IntValue 1338) )
-                , ( "absolute ref", "foo123.bar123", Ok (IntValue 1337) )
-                , ( "simple addition", "1+2", Ok (IntValue 3) )
+          testCollection "eval"
+            evalString
+            [ ( "empty", "", Err Types.ParsingError )
+            , ( "invalid input 1", "this is not valid", Err Types.ParsingError )
+            , ( "integer", "1", Ok (IntValue 1) )
+            , ( "negative integer", "-1", Ok (IntValue -1) )
+            , ( "string", "\"a\"", Ok (StringValue "a") )
+            , ( "local ref", "foo123", Ok (IntValue 1338) )
+            , ( "trailing space after ref", "thisisvalid ", Ok (IntValue 1338) )
+            , ( "absolute ref", "foo123.bar123", Ok (IntValue 1337) )
+            , ( "simple addition", "1+2", Ok (IntValue 3) )
 
-                -- There is a weird case where the `int` parser fails on the letter 'E'.
-                , ( "special case E1", "E1", Ok (IntValue 1338) )
-                ]
+            -- There is a weird case where the `int` parser fails on the letter 'E'.
+            , ( "special case E1", "E1", Ok (IntValue 1338) )
+            ]
         , describe "initialInput"
             [ test "return the unmodified user input when valid" <|
                 \_ ->
@@ -64,19 +64,20 @@ suite =
                         |> Formula.initialInput
                         |> Expect.equal "foo bar baz"
             ]
-        , describe "sourceView" <|
-            testCollection (sourceView alwaysId1)
-                [ ( "empty", "", Just "" )
-                , ( "integer", "1", Just "1" )
-                , ( "negative integer", "-1", Just "-1" )
-                , ( "string", "\"a\"", Just "\"a\"" )
-                , ( "simple addition", "1 + 2", Just "1+2" )
-                , ( "local ref", "foo123", Just "foo123" )
-                , ( "absolute ref to existing value", "foo123.bar123", Just "Sheet1.bar123" )
-                ]
-                ++ testCollection (sourceView (always Nothing))
-                    [ ( "fallback on user input when a reference is not defined", "foo123.bar123", Just "foo123.bar123" )
-                    ]
+        , testCollection "sourceView when id found"
+            (sourceView alwaysId1)
+            [ ( "empty", "", Just "" )
+            , ( "integer", "1", Just "1" )
+            , ( "negative integer", "-1", Just "-1" )
+            , ( "string", "\"a\"", Just "\"a\"" )
+            , ( "simple addition", "1 + 2", Just "1+2" )
+            , ( "local ref", "foo123", Just "foo123" )
+            , ( "absolute ref to existing value", "foo123.bar123", Just "Sheet1.bar123" )
+            ]
+        , testCollection "sourceView when id not found"
+            (sourceView (always Nothing))
+            [ ( "fallback on user input when a reference is not defined", "foo123.bar123", Just "foo123.bar123" )
+            ]
         , describe "isValid"
             [ test "when valid" <|
                 \_ ->
@@ -89,20 +90,18 @@ suite =
                         |> Formula.isValid
                         |> Expect.false "expected isValid to return False"
             ]
-        , describe "parseInt" <|
-            [ describe "when valid" <|
-                testCollection Formula.parseInt
-                    [ ( "positive integer", "32", Ok 32 )
-                    , ( "negative integer", "-32", Ok -32 )
-                    , ( "with leading space", "   32", Ok 32 )
-                    , ( "with trailing space", "32   ", Ok 32 )
-                    , ( "with spaces between minus and digits", " -   32 ", Ok -32 )
-                    ]
-            , describe "when not valid" <|
-                testCollection (Formula.parseInt >> Result.mapError (always Nothing))
-                    [ ( "empty string", "", Err Nothing )
-                    , ( "not a digit", "foo", Err Nothing )
-                    , ( "trailing alpha", "123foo", Err Nothing )
-                    ]
+        , testCollection "parseInt when valid"
+            Formula.parseInt
+            [ ( "positive integer", "32", Ok 32 )
+            , ( "negative integer", "-32", Ok -32 )
+            , ( "with leading space", "   32", Ok 32 )
+            , ( "with trailing space", "32   ", Ok 32 )
+            , ( "with spaces between minus and digits", " -   32 ", Ok -32 )
+            ]
+        , testCollection "parseInt when not valid"
+            (Formula.parseInt >> Result.mapError (always Nothing))
+            [ ( "empty string", "", Err Nothing )
+            , ( "not a digit", "foo", Err Nothing )
+            , ( "trailing alpha", "123foo", Err Nothing )
             ]
         ]

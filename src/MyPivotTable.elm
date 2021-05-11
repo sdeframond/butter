@@ -1,9 +1,21 @@
-module MyPivotTable exposing (Msg, PivotTable, init, subscriptions, update, view)
+module MyPivotTable exposing
+    ( Msg(..)
+    , PivotTable
+    , decoder
+    , encode
+    , init
+    , subscriptions
+    , update
+    , view
+    )
 
 import Css exposing (..)
+import DecodeHelpers
 import DnDList.Groups as DnDList
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as Attr
+import Json.Decode as Decode
+import Json.Encode as Encode
 import Name exposing (Name)
 import PivotTable as PT
 import Types
@@ -33,9 +45,9 @@ type PivotTable
 
 
 type alias State =
-    { table : Types.Table
+    { dnd : DnDList.Model
+    , table : Types.Table
     , fields : List Draggable
-    , dnd : DnDList.Model
     }
 
 
@@ -232,3 +244,74 @@ ghostField toMsg dnd maybeDragItem =
             H.li
                 (dndSystem.ghostStyles dnd |> List.map (Attr.fromUnstyled >> Attr.map toMsg))
                 [ H.text (Name.toString name) ]
+
+
+
+-- JSON
+
+
+jsonKeys : { column : String, fields : String, group : String, name : String, row : String, table : String, unused : String }
+jsonKeys =
+    { column = "column"
+    , fields = "fields"
+    , group = "group"
+    , name = "name"
+    , row = "row"
+    , table = "table"
+    , unused = "unused"
+    }
+
+
+decoder : Decode.Decoder PivotTable
+decoder =
+    Decode.map PivotTable stateDecoder
+
+
+stateDecoder : Decode.Decoder State
+stateDecoder =
+    Decode.map2 (State dndSystem.model)
+        (Decode.field jsonKeys.table Types.tableDecoder)
+        (Decode.field jsonKeys.fields <| Decode.list draggableDecoder)
+
+
+draggableDecoder : Decode.Decoder Draggable
+draggableDecoder =
+    let
+        groups =
+            [ ( jsonKeys.row, Decode.succeed RowsGroup )
+            , ( jsonKeys.column, Decode.succeed ColumnsGroup )
+            , ( jsonKeys.unused, Decode.succeed UnusedGroup )
+            ]
+    in
+    Decode.map2 Draggable
+        (Decode.field jsonKeys.group (Decode.string |> DecodeHelpers.switch "Invalid group" groups))
+        (Decode.field jsonKeys.name <| Decode.nullable Name.decoder)
+
+
+encode : PivotTable -> Encode.Value
+encode (PivotTable state) =
+    Encode.object
+        [ ( jsonKeys.table, Types.encodeTable state.table )
+        , ( jsonKeys.fields, Encode.list encodeDraggable state.fields )
+        ]
+
+
+encodeDraggable : Draggable -> Encode.Value
+encodeDraggable draggable =
+    let
+        encodeGroup group =
+            Encode.string <|
+                case group of
+                    RowsGroup ->
+                        jsonKeys.row
+
+                    ColumnsGroup ->
+                        jsonKeys.column
+
+                    UnusedGroup ->
+                        jsonKeys.unused
+    in
+    Encode.object
+        [ ( jsonKeys.group, encodeGroup draggable.group )
+        , ( jsonKeys.name, draggable.maybeName |> Maybe.map Name.encode |> Maybe.withDefault Encode.null )
+        ]

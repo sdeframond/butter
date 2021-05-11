@@ -1,9 +1,11 @@
 module Sheet exposing
     ( Config
     , Context
-    , Msg
+    , Msg(..)
     , Sheet
     , commitEdit
+    , decoder
+    , encode
     , eval
     , getName
     , initGrid
@@ -17,6 +19,8 @@ module Sheet exposing
 
 import Grid exposing (Grid)
 import Html.Styled exposing (Html)
+import Json.Decode as Decode
+import Json.Encode as Encode
 import MyPivotTable exposing (PivotTable)
 import MyTable as Table exposing (Table)
 import Name exposing (Name)
@@ -176,3 +180,53 @@ view config sheet =
 
         PivotTableSheet _ pt ->
             MyPivotTable.view (PivotTableMsg >> config.toMsg) pt
+
+
+
+-- JSON
+
+
+jsonKeys : { name : String, grid : String, table : String, pivotTable : String }
+jsonKeys =
+    { name = "name"
+    , grid = "grid"
+    , table = "table"
+    , pivotTable = "pivotTable"
+    }
+
+
+decoder : (Name -> Maybe Types.SheetId) -> Decode.Decoder Sheet
+decoder getSheetId =
+    let
+        help makeSheet field sheetDecoder =
+            Decode.map2 makeSheet
+                (Decode.field jsonKeys.name Name.decoder)
+                (Decode.field field sheetDecoder)
+    in
+    Decode.oneOf
+        [ help GridSheet jsonKeys.grid <| Grid.decoder getSheetId
+        , help TableSheet jsonKeys.table <| Table.decoder getSheetId
+        , help PivotTableSheet jsonKeys.pivotTable MyPivotTable.decoder
+        ]
+
+
+encode : (Types.SheetId -> Maybe Name) -> Sheet -> Encode.Value
+encode getSheetName sheet =
+    case sheet of
+        GridSheet name grid ->
+            Encode.object
+                [ ( jsonKeys.name, Name.encode name )
+                , ( jsonKeys.grid, Grid.encode getSheetName grid )
+                ]
+
+        TableSheet name table ->
+            Encode.object
+                [ ( jsonKeys.name, Name.encode name )
+                , ( jsonKeys.table, Table.encode getSheetName table )
+                ]
+
+        PivotTableSheet name pivotTable ->
+            Encode.object
+                [ ( jsonKeys.name, Name.encode name )
+                , ( jsonKeys.pivotTable, MyPivotTable.encode pivotTable )
+                ]

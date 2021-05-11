@@ -2,7 +2,10 @@
   "private": true,
   "name": "butter",
   "scripts": {
-    "postinstall": "npx elm-tooling install"
+    "postinstall": "npx elm-tooling install",
+    "start": "npx elm-live src/Main.elm -- --output=build/elm.js",
+    "test": "npx elm-test-rs",
+    "test-watch": "npx elm-test-rs --watch --fuzz 10"
   },
   "devDependencies": {
     "elm": "*",

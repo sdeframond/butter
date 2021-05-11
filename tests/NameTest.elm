@@ -10,21 +10,19 @@ import Test exposing (..)
 suite : Test
 suite =
     describe "Name"
-        [ describe "fromString & toString" <|
-            [ describe "when valid" <|
-                testCollection (Name.fromString >> Maybe.map Name.toString)
-                    [ ( "simple name", "foo", Just "foo" )
-                    , ( "with trailing digits", "foo123", Just "foo123" )
-                    , ( "with leading space", "   foo", Just "foo" )
-                    , ( "with trailing space", "foo   ", Just "foo" )
-                    ]
-            , describe "when not valid" <|
-                testCollection Name.fromString
-                    [ ( "empty string", "", Nothing )
-                    , ( "starts with a digit", "123foo", Nothing )
-                    , ( "contains a space", "foo bar", Nothing )
-                    , ( "contains a dot", "foo.bar", Nothing )
-                    ]
+        [ testCollection "fromString & toString when valid"
+            (Name.fromString >> Maybe.map Name.toString)
+            [ ( "simple name", "foo", Just "foo" )
+            , ( "with trailing digits", "foo123", Just "foo123" )
+            , ( "with leading space", "   foo", Just "foo" )
+            , ( "with trailing space", "foo   ", Just "foo" )
+            ]
+        , testCollection "fromString & toString when not valid"
+            Name.fromString
+            [ ( "empty string", "", Nothing )
+            , ( "starts with a digit", "123foo", Nothing )
+            , ( "contains a space", "foo bar", Nothing )
+            , ( "contains a dot", "foo.bar", Nothing )
             ]
         , test "fromSheetId produces a valid name" <|
             \_ ->

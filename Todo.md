@@ -20,9 +20,10 @@ Table ranges :
 Todo
 ====
 
-- Enabler : encapsulate Name in order to make sure it is parsed.
-- Feature : Save to file (and load file)
-- Feature : Local storage
+- Bug : accept non-ascii letter in names.
+- Enabler : Remove dependency to elm-sortable-table (implement my own)
+    - Benefits : to store current state in local storage
+    - Benefit : to facilitate having a consistent look across sheet types
 - Feature : Common look for Grid, Table and PivotTable
 - Feature : Functions (which ones ?)
 - Feature : Edit table field definition
@@ -45,10 +46,13 @@ Todo
 Doing
 =====
 
+- Feature : Save to file (and load file)
 
 Done
 ====
 
+- 2021-05-11 - Feature : Local storage
+- 2021-05-07 - Enabler : encapsulate Name in order to make sure it is parsed.
 - 2021-05-05 - Refactor : Move sheet selection and edition next to where the data is defined (maybe into Document ?)
 - 2021-05-04 - Feature : explicitely type grid cells (similar to table fields)
 - 2021-04-21 - Refactor : Move grid sheet's data into the GridSheet itself.
