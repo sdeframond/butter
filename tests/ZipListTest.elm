@@ -28,10 +28,15 @@ suite =
             , test "returns nothing when nothing matches" <|
                 \_ -> Expect.equal (ZL.select (always False) zlist |> Maybe.map ZL.toList) Nothing
             ]
-        , todo "filter"
-        , todo "map"
-        , todo "member"
-        , todo "removeCurrent"
-        , todo "setCurrent"
-        , todo "toListWithPosition"
+        , describe "filter" <|
+            [ test "returns Nothing when removeing the last item" <|
+                \_ -> ZL.singleton False |> ZL.filter identity |> Expect.equal Nothing
+            , test "removes all matching items" <|
+                \_ ->
+                    ZL.singleton False
+                        |> ZL.append [ True, True, False ]
+                        |> ZL.filter identity
+                        |> Maybe.map ZL.toList
+                        |> Expect.equal (Just [ True, True ])
+            ]
         ]

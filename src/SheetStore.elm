@@ -1,6 +1,5 @@
 module SheetStore exposing
     ( SheetStore
-    , commitSheet
     , commitSheetName
     , createSheet
     , currentSheet
@@ -157,37 +156,13 @@ createSheet params (SheetStore model) =
 
 removeSheet : Types.SheetId -> SheetStore -> SheetStore
 removeSheet sheetId ((SheetStore data) as model) =
-    let
-        maybeNewSheets =
-            if isCurrentId sheetId model then
-                ZL.removeCurrent data.sheets
-                    |> Maybe.map
-                        (\newSheets ->
-                            { newSheets = newSheets
-                            , maybeSheetName = Just (currentSheetName model)
-                            }
-                        )
-
-            else if ZL.map Tuple.first data.sheets |> ZL.member sheetId then
-                Just
-                    { newSheets =
-                        ZL.filter (Tuple.first >> (/=) sheetId) data.sheets
-                            |> Maybe.withDefault data.sheets
-                    , maybeSheetName = getSheetName model sheetId
-                    }
-
-            else
-                Nothing
-    in
-    maybeNewSheets
+    ZL.filter (Tuple.first >> (/=) sheetId) data.sheets
         |> Maybe.map
-            (\{ newSheets, maybeSheetName } ->
+            (\newSheets ->
                 { data
                     | sheets = newSheets
                     , sheetIds =
-                        maybeSheetName
-                            |> Maybe.map (\name -> Name.remove name data.sheetIds)
-                            |> Maybe.withDefault data.sheetIds
+                        Name.remove (currentSheetName model) data.sheetIds
                 }
             )
         |> Maybe.withDefault data

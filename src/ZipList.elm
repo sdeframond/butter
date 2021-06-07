@@ -8,7 +8,6 @@ module ZipList exposing
     , get
     , map
     , member
-    , removeCurrent
     , select
     , setCurrent
     , singleton
@@ -97,17 +96,19 @@ append a (ZipList data) =
 
 filter : (a -> Bool) -> ZipList a -> Maybe (ZipList a)
 filter f (ZipList { before_, current_, after_ }) =
-    if not (f current_) then
-        -- cannot remove the current_ item
-        Nothing
-
-    else
-        Just <|
+    let
+        new =
             ZipList
                 { current_ = current_
                 , before_ = L.filter f before_
                 , after_ = L.filter f after_
                 }
+    in
+    if not <| f current_ then
+        removeCurrent new
+
+    else
+        Just new
 
 
 current : ZipList a -> a
