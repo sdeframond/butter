@@ -1,9 +1,12 @@
 module Document exposing
     ( Model
     , Msg(..)
+    , currentSheetId
+    , currentSheetName
     , decoder
     , encode
     , init
+    , isEditing
     , subscriptions
     , update
     , view
@@ -41,7 +44,7 @@ type alias Model =
 
 type EditStatus
     = NotEditing
-    | EditingSheetName Types.SheetId String
+    | EditingSheetName String
 
 
 
@@ -69,6 +72,16 @@ init =
 
 
 -- SHEETS
+
+
+isEditing : Model -> Bool
+isEditing { edit } =
+    case edit of
+        EditingSheetName _ ->
+            True
+
+        NotEditing ->
+            False
 
 
 currentSheet : Model -> Sheet
@@ -239,7 +252,7 @@ type Msg
     | InsertTableSheet
     | SelectSheet Types.SheetId
     | RemoveSheet Types.SheetId
-    | EditSheet ( Types.SheetId, Name )
+    | EditSheet
     | UpdateSheetName String
 
 
@@ -253,17 +266,17 @@ update msg model =
 
         commitSheetName m =
             case m.edit of
-                EditingSheetName sheetId input ->
-                    { m | edit = NotEditing }
-                        |> renameSheet sheetId input
+                EditingSheetName input ->
+                    renameSheet (currentSheetId m) input m
                         -- TODO log errors
                         |> R.withDefault m
+                        |> (\renamed -> { renamed | edit = NotEditing })
 
                 NotEditing ->
                     m
 
-        commitEdit : Model -> Model
-        commitEdit m =
+        commitSheet : Model -> Model
+        commitSheet m =
             let
                 setCurrentSheet sheet =
                     { m
@@ -300,10 +313,12 @@ update msg model =
 
         SelectSheet sheetId ->
             ( model
-                |> commitEdit
+                |> commitSheet
                 |> commitSheetName
-                |> selectSheet sheetId
-                |> Maybe.withDefault model
+                |> (\m ->
+                        selectSheet sheetId m
+                            |> Maybe.withDefault m
+                   )
             , Cmd.none
             )
 
@@ -312,9 +327,12 @@ update msg model =
             , Cmd.none
             )
 
-        EditSheet ( sheetId, sheetName ) ->
-            ( { model | edit = EditingSheetName sheetId (Name.toString sheetName) }
-                |> commitEdit
+        EditSheet ->
+            ( currentSheetName model
+                |> (\name ->
+                        { model | edit = EditingSheetName (Name.toString name) }
+                            |> commitSheet
+                   )
             , Cmd.none
             )
 
@@ -322,8 +340,8 @@ update msg model =
             ( { model
                 | edit =
                     case model.edit of
-                        EditingSheetName sheetId _ ->
-                            EditingSheetName sheetId input
+                        EditingSheetName _ ->
+                            EditingSheetName input
 
                         _ ->
                             model.edit
@@ -428,7 +446,7 @@ sheetSelector model =
                                 fontWeight normal
                             ]
                         , Events.onClick <| SelectSheet sheetId
-                        , Events.onDoubleClick <| EditSheet ( sheetId, Sheet.getName sheet )
+                        , Events.onDoubleClick <| EditSheet
                         ]
                         [ text (Sheet.getName sheet |> Name.toString)
                         , span [ Events.onClick <| RemoveSheet sheetId ]
@@ -436,7 +454,7 @@ sheetSelector model =
                         ]
             in
             case ( positionedName, model.edit ) of
-                ( Current _, EditingSheetName _ newName ) ->
+                ( Current _, EditingSheetName newName ) ->
                     li [ itemCss ]
                         [ input
                             [ Attr.value newName
@@ -530,8 +548,7 @@ editStatusDecoder =
         |> DecodeHelpers.switch "Invalid status type"
             [ ( jsonKeys.statusNotEditing, Decode.succeed NotEditing )
             , ( jsonKeys.statusEditingSheetName
-              , Decode.map2 EditingSheetName
-                    (Decode.field jsonKeys.statusSheetId PositiveInt.decoder)
+              , Decode.map EditingSheetName
                     (Decode.field jsonKeys.statusInput Decode.string)
               )
             ]
@@ -565,10 +582,9 @@ encodeEditStatus status =
             Encode.object
                 [ ( jsonKeys.statusType, Encode.string jsonKeys.statusNotEditing ) ]
 
-        EditingSheetName id input ->
+        EditingSheetName input ->
             Encode.object
                 [ ( jsonKeys.statusType, Encode.string jsonKeys.statusEditingSheetName )
-                , ( jsonKeys.statusSheetId, PositiveInt.encode id )
                 , ( jsonKeys.statusInput, Encode.string input )
                 ]
 

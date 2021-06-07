@@ -13,51 +13,51 @@ import Test exposing (..)
 import Types
 
 
-positiveInt : Fuzzer PositiveInt
-positiveInt =
+positiveIntFuzzer : Fuzzer PositiveInt
+positiveIntFuzzer =
     PositiveInt.range 100
         |> List.map constant
         |> oneOf
 
 
-name : Fuzzer Name.Name
-name =
-    map2 Name.fromCoord positiveInt positiveInt
+nameFuzzer : Fuzzer Name.Name
+nameFuzzer =
+    map2 Name.fromCoord positiveIntFuzzer positiveIntFuzzer
 
 
-gridMsg : Fuzzer Grid.Msg
-gridMsg =
+gridMsgFuzzer : Fuzzer Grid.Msg
+gridMsgFuzzer =
     oneOf
-        [ map Grid.StartEditing name
+        [ map Grid.StartEditing nameFuzzer
         , map Grid.UpdateEdit string
         , constant Grid.OnClickCellTypeBtn
         , constant Grid.OnClickCellDataTypeBtn
         ]
 
 
-sheetIds : Fuzzer (Name.Store Types.SheetId)
-sheetIds =
-    tuple ( name, positiveInt )
+sheetIdsFuzzer : Fuzzer (Name.Store Types.SheetId)
+sheetIdsFuzzer =
+    tuple ( nameFuzzer, positiveIntFuzzer )
         |> list
         |> map Name.fromList
 
 
-grid : Fuzzer Grid.Grid
-grid =
+gridFuzzer : Fuzzer Grid.Grid
+gridFuzzer =
     let
         f ids =
             List.foldl (Grid.update (\n -> Name.get n ids)) Grid.init
     in
-    map2 f sheetIds (list gridMsg)
+    map2 f sheetIdsFuzzer (list gridMsgFuzzer)
 
 
-tableMsg : Fuzzer MyTable.Msg
-tableMsg =
+tableMsgFuzzer : Fuzzer MyTable.Msg
+tableMsgFuzzer =
     oneOf
         [ -- SetTableState T.State
-          map2 MyTable.UpdateNewRowField name string
+          map2 MyTable.UpdateNewRowField nameFuzzer string
         , map MyTable.KeyDown int
-        , map3 MyTable.EditCell positiveInt name string
+        , map3 MyTable.EditCell positiveIntFuzzer nameFuzzer string
         , map MyTable.UpdateEditedCell string
         , constant MyTable.OnClickAddFieldBtn
         , map MyTable.OnInputNewFieldName string
@@ -68,58 +68,62 @@ tableMsg =
         ]
 
 
-table : Fuzzer Types.Table
-table =
-    map2 Types.Table (list name) (constant [])
+tableFuzzer : Fuzzer Types.Table
+tableFuzzer =
+    map2 Types.Table (list nameFuzzer) (constant [])
 
 
-sheetMsg : Fuzzer Sheet.Msg
-sheetMsg =
+sheetMsgFuzzer : Fuzzer Sheet.Msg
+sheetMsgFuzzer =
     oneOf
-        [ map Sheet.GridMsg gridMsg
-        , map Sheet.TableMsg tableMsg
+        [ map Sheet.GridMsg gridMsgFuzzer
+        , map Sheet.TableMsg tableMsgFuzzer
 
         -- , map Sheet.PivotTableMsg pivotTableMsg
         ]
 
 
-initSheet : Fuzzer Sheet.Sheet
-initSheet =
+initSheetFuzzer : Fuzzer Sheet.Sheet
+initSheetFuzzer =
     oneOf
-        [ map Sheet.initGrid name
-        , map2 Sheet.initPivotTable name table
-        , map Sheet.initTable name
+        [ map Sheet.initGrid nameFuzzer
+        , map2 Sheet.initPivotTable nameFuzzer tableFuzzer
+        , map Sheet.initTable nameFuzzer
         ]
 
 
-documentMsg : Fuzzer Document.Msg
-documentMsg =
+documentMsgFuzzer : Fuzzer Document.Msg
+documentMsgFuzzer =
     oneOf
-        [ map Document.SheetMsg sheetMsg
-        , map Document.InsertSheet initSheet
+        [ map Document.SheetMsg sheetMsgFuzzer
+        , map Document.InsertSheet initSheetFuzzer
         , constant Document.InsertGridSheet
         , constant Document.InsertTableSheet
-        , map Document.SelectSheet positiveInt
-        , map Document.RemoveSheet positiveInt
-        , tuple ( positiveInt, name ) |> map Document.EditSheet
+        , map Document.SelectSheet positiveIntFuzzer
+        , map Document.RemoveSheet positiveIntFuzzer
+        , constant Document.EditSheet
         , map Document.UpdateSheetName string
         ]
 
 
-document : Fuzzer Document.Model
-document =
+documentFuzzer : Fuzzer Document.Model
+documentFuzzer =
     let
         f =
-            Document.init
-                |> List.foldl (\msg model -> Document.update msg model |> Tuple.first)
+            processMsgList Document.init
     in
-    map f (list documentMsg)
+    map f (list documentMsgFuzzer)
+
+
+processMsgList : Document.Model -> List Document.Msg -> Document.Model
+processMsgList doc =
+    List.foldl (\msg model -> Document.update msg model |> Tuple.first) doc
 
 
 suite : Test
 suite =
     describe "Document"
-        [ fuzz document "JSON Encode/Decode" <|
+        [ fuzz documentFuzzer "JSON Encode/Decode" <|
             \doc ->
                 let
                     commited =
@@ -129,4 +133,56 @@ suite =
                 Document.encode commited
                     |> Decode.decodeValue Document.decoder
                     |> Expect.equal (Ok commited)
+        , fuzz (tuple3 ( nameFuzzer, documentFuzzer, sheetMsgFuzzer ))
+            "when renaming a sheet with a valid name, focusing inside a sheet commits current edition"
+          <|
+            \( newName, doc, sheetMsg ) ->
+                [ Document.EditSheet
+                , Document.UpdateSheetName <| Name.toString newName
+                , Document.SheetMsg sheetMsg
+                ]
+                    |> processMsgList doc
+                    |> Expect.all
+                        [ Document.currentSheetName >> Expect.equal newName
+                        , Document.isEditing >> Expect.false "Expected editing to be false"
+                        ]
+        , fuzz (tuple ( nameFuzzer, documentFuzzer ))
+            "when renaming a sheet with a valid name, selecting a sheet commits current edition"
+          <|
+            \( newName, doc ) ->
+                [ Document.EditSheet
+                , Document.UpdateSheetName <| Name.toString newName
+                , Document.SelectSheet <| Document.currentSheetId doc
+                ]
+                    |> processMsgList doc
+                    |> Expect.all
+                        [ Document.currentSheetName >> Expect.equal newName
+                        , Document.isEditing >> Expect.false "Expected editing to be false"
+                        ]
+        , fuzz (tuple ( documentFuzzer, sheetMsgFuzzer ))
+            "when renaming a sheet with an invalid name, focusing inside a sheet cancels current edition"
+          <|
+            \( doc, sheetMsg ) ->
+                [ Document.EditSheet
+                , Document.UpdateSheetName "not a valid name"
+                , Document.SheetMsg sheetMsg
+                ]
+                    |> processMsgList doc
+                    |> Expect.all
+                        [ Document.currentSheetName >> Expect.equal (Document.currentSheetName doc)
+                        , Document.isEditing >> Expect.false "Expected editing to be false"
+                        ]
+        , fuzz documentFuzzer
+            "when renaming a sheet with an invalid name, renaming another sheet cancels current edition"
+          <|
+            \doc ->
+                [ Document.EditSheet
+                , Document.UpdateSheetName "not a valid name"
+                , Document.SelectSheet <| Document.currentSheetId doc
+                ]
+                    |> processMsgList doc
+                    |> Expect.all
+                        [ Document.currentSheetName >> Expect.equal (Document.currentSheetName doc)
+                        , Document.isEditing >> Expect.false "Expected editing to be false"
+                        ]
         ]
