@@ -1,12 +1,16 @@
 module Sheet exposing
-    ( Config
+    ( AllParams
+    , Config
     , Context
     , Msg(..)
+    , Params
     , Sheet
+    , allParams
     , commitEdit
     , decoder
     , encode
     , eval
+    , fromParams
     , getName
     , initGrid
     , initPivotTable
@@ -31,6 +35,40 @@ type Sheet
     = GridSheet Name Grid
     | TableSheet Name Table
     | PivotTableSheet Name PivotTable
+
+
+type Params
+    = GridSheetParams
+    | TableSheetParams
+    | PivotTableSheetParams Types.Table
+
+
+type alias AllParams =
+    { pivotTable : Types.Table -> Params
+    , grid : Params
+    , table : Params
+    }
+
+
+allParams : AllParams
+allParams =
+    { pivotTable = PivotTableSheetParams
+    , grid = GridSheetParams
+    , table = TableSheetParams
+    }
+
+
+fromParams : Name -> Params -> Sheet
+fromParams name params =
+    case params of
+        GridSheetParams ->
+            initGrid name
+
+        TableSheetParams ->
+            initTable name
+
+        PivotTableSheetParams table ->
+            initPivotTable name table
 
 
 initGrid : Name -> Sheet

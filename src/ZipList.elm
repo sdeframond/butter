@@ -13,7 +13,6 @@ module ZipList exposing
     , setCurrent
     , singleton
     , toList
-    , toListWithPosition
     )
 
 import Html exposing (a)
@@ -50,25 +49,9 @@ map f (ZipList { before_, current_, after_ }) =
     ZipList (Data (L.map f before_) (f current_) (L.map f after_))
 
 
-type alias PositionTags a b =
-    { before : a -> b
-    , current : a -> b
-    , after : a -> b
-    }
-
-
 toList : ZipList a -> List a
 toList (ZipList { before_, current_, after_ }) =
     L.concat [ before_, [ current_ ], after_ ]
-
-
-toListWithPosition : PositionTags a b -> ZipList a -> List b
-toListWithPosition tag (ZipList { before_, current_, after_ }) =
-    L.concat
-        [ L.map tag.before before_
-        , [ tag.current current_ ]
-        , L.map tag.after after_
-        ]
 
 
 {-| Move `current` to the first item the matches the given condition.

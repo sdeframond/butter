@@ -9,6 +9,7 @@ import MyTable
 import Name
 import PositiveInt exposing (PositiveInt)
 import Sheet
+import SheetStore
 import Test exposing (..)
 import Types
 
@@ -35,22 +36,6 @@ gridMsgFuzzer =
         ]
 
 
-sheetIdsFuzzer : Fuzzer (Name.Store Types.SheetId)
-sheetIdsFuzzer =
-    tuple ( nameFuzzer, positiveIntFuzzer )
-        |> list
-        |> map Name.fromList
-
-
-gridFuzzer : Fuzzer Grid.Grid
-gridFuzzer =
-    let
-        f ids =
-            List.foldl (Grid.update (\n -> Name.get n ids)) Grid.init
-    in
-    map2 f sheetIdsFuzzer (list gridMsgFuzzer)
-
-
 tableMsgFuzzer : Fuzzer MyTable.Msg
 tableMsgFuzzer =
     oneOf
@@ -70,7 +55,10 @@ tableMsgFuzzer =
 
 tableFuzzer : Fuzzer Types.Table
 tableFuzzer =
-    map2 Types.Table (list nameFuzzer) (constant [])
+    map2 Types.Table
+        (list nameFuzzer)
+        -- TODO write a real fuzzer here
+        (constant [])
 
 
 sheetMsgFuzzer : Fuzzer Sheet.Msg
@@ -79,16 +67,17 @@ sheetMsgFuzzer =
         [ map Sheet.GridMsg gridMsgFuzzer
         , map Sheet.TableMsg tableMsgFuzzer
 
+        -- Not fuzzing this because all messages are from DnDList
         -- , map Sheet.PivotTableMsg pivotTableMsg
         ]
 
 
-initSheetFuzzer : Fuzzer Sheet.Sheet
-initSheetFuzzer =
+sheetParamsFuzzer : Fuzzer Sheet.Params
+sheetParamsFuzzer =
     oneOf
-        [ map Sheet.initGrid nameFuzzer
-        , map2 Sheet.initPivotTable nameFuzzer tableFuzzer
-        , map Sheet.initTable nameFuzzer
+        [ constant Sheet.allParams.grid
+        , constant Sheet.allParams.table
+        , map Sheet.allParams.pivotTable tableFuzzer
         ]
 
 
@@ -96,9 +85,7 @@ documentMsgFuzzer : Fuzzer Document.Msg
 documentMsgFuzzer =
     oneOf
         [ map Document.SheetMsg sheetMsgFuzzer
-        , map Document.InsertSheet initSheetFuzzer
-        , constant Document.InsertGridSheet
-        , constant Document.InsertTableSheet
+        , map Document.InsertSheet sheetParamsFuzzer
         , map Document.SelectSheet positiveIntFuzzer
         , map Document.RemoveSheet positiveIntFuzzer
         , constant Document.EditSheet
@@ -143,8 +130,8 @@ suite =
                 ]
                     |> processMsgList doc
                     |> Expect.all
-                        [ Document.currentSheetName >> Expect.equal newName
-                        , Document.isEditing >> Expect.false "Expected editing to be false"
+                        [ SheetStore.currentSheetName >> Expect.equal newName
+                        , SheetStore.isEditing >> Expect.false "Expected editing to be false"
                         ]
         , fuzz (tuple ( nameFuzzer, documentFuzzer ))
             "when renaming a sheet with a valid name, selecting a sheet commits current edition"
@@ -152,12 +139,12 @@ suite =
             \( newName, doc ) ->
                 [ Document.EditSheet
                 , Document.UpdateSheetName <| Name.toString newName
-                , Document.SelectSheet <| Document.currentSheetId doc
+                , Document.SelectSheet <| SheetStore.currentSheetId doc
                 ]
                     |> processMsgList doc
                     |> Expect.all
-                        [ Document.currentSheetName >> Expect.equal newName
-                        , Document.isEditing >> Expect.false "Expected editing to be false"
+                        [ SheetStore.currentSheetName >> Expect.equal newName
+                        , SheetStore.isEditing >> Expect.false "Expected editing to be false"
                         ]
         , fuzz (tuple ( documentFuzzer, sheetMsgFuzzer ))
             "when renaming a sheet with an invalid name, focusing inside a sheet cancels current edition"
@@ -169,8 +156,8 @@ suite =
                 ]
                     |> processMsgList doc
                     |> Expect.all
-                        [ Document.currentSheetName >> Expect.equal (Document.currentSheetName doc)
-                        , Document.isEditing >> Expect.false "Expected editing to be false"
+                        [ SheetStore.currentSheetName >> Expect.equal (SheetStore.currentSheetName doc)
+                        , SheetStore.isEditing >> Expect.false "Expected editing to be false"
                         ]
         , fuzz documentFuzzer
             "when renaming a sheet with an invalid name, renaming another sheet cancels current edition"
@@ -178,11 +165,11 @@ suite =
             \doc ->
                 [ Document.EditSheet
                 , Document.UpdateSheetName "not a valid name"
-                , Document.SelectSheet <| Document.currentSheetId doc
+                , Document.SelectSheet <| SheetStore.currentSheetId doc
                 ]
                     |> processMsgList doc
                     |> Expect.all
-                        [ Document.currentSheetName >> Expect.equal (Document.currentSheetName doc)
-                        , Document.isEditing >> Expect.false "Expected editing to be false"
+                        [ SheetStore.currentSheetName >> Expect.equal (SheetStore.currentSheetName doc)
+                        , SheetStore.isEditing >> Expect.false "Expected editing to be false"
                         ]
         ]
