@@ -7,9 +7,9 @@ import Grid
 import Json.Decode as Decode
 import MyTable
 import Name
+import NamedAndOrderedStore
 import PositiveInt exposing (PositiveInt)
 import Sheet
-import SheetStore
 import Test exposing (..)
 import Types
 
@@ -130,8 +130,8 @@ suite =
                 ]
                     |> processMsgList doc
                     |> Expect.all
-                        [ SheetStore.currentSheetName >> Expect.equal newName
-                        , SheetStore.isEditing >> Expect.false "Expected editing to be false"
+                        [ NamedAndOrderedStore.currentName >> Expect.equal newName
+                        , NamedAndOrderedStore.isEditing >> Expect.false "Expected editing to be false"
                         ]
         , fuzz (tuple ( nameFuzzer, documentFuzzer ))
             "when renaming a sheet with a valid name, selecting a sheet commits current edition"
@@ -139,12 +139,12 @@ suite =
             \( newName, doc ) ->
                 [ Document.EditSheet
                 , Document.UpdateSheetName <| Name.toString newName
-                , Document.SelectSheet <| SheetStore.currentSheetId doc
+                , Document.SelectSheet <| NamedAndOrderedStore.currentId doc
                 ]
                     |> processMsgList doc
                     |> Expect.all
-                        [ SheetStore.currentSheetName >> Expect.equal newName
-                        , SheetStore.isEditing >> Expect.false "Expected editing to be false"
+                        [ NamedAndOrderedStore.currentName >> Expect.equal newName
+                        , NamedAndOrderedStore.isEditing >> Expect.false "Expected editing to be false"
                         ]
         , fuzz (tuple ( documentFuzzer, sheetMsgFuzzer ))
             "when renaming a sheet with an invalid name, focusing inside a sheet cancels current edition"
@@ -156,8 +156,8 @@ suite =
                 ]
                     |> processMsgList doc
                     |> Expect.all
-                        [ SheetStore.currentSheetName >> Expect.equal (SheetStore.currentSheetName doc)
-                        , SheetStore.isEditing >> Expect.false "Expected editing to be false"
+                        [ NamedAndOrderedStore.currentName >> Expect.equal (NamedAndOrderedStore.currentName doc)
+                        , NamedAndOrderedStore.isEditing >> Expect.false "Expected editing to be false"
                         ]
         , fuzz documentFuzzer
             "when renaming a sheet with an invalid name, renaming another sheet cancels current edition"
@@ -165,11 +165,11 @@ suite =
             \doc ->
                 [ Document.EditSheet
                 , Document.UpdateSheetName "not a valid name"
-                , Document.SelectSheet <| SheetStore.currentSheetId doc
+                , Document.SelectSheet <| NamedAndOrderedStore.currentId doc
                 ]
                     |> processMsgList doc
                     |> Expect.all
-                        [ SheetStore.currentSheetName >> Expect.equal (SheetStore.currentSheetName doc)
-                        , SheetStore.isEditing >> Expect.false "Expected editing to be false"
+                        [ NamedAndOrderedStore.currentName >> Expect.equal (NamedAndOrderedStore.currentName doc)
+                        , NamedAndOrderedStore.isEditing >> Expect.false "Expected editing to be false"
                         ]
         ]

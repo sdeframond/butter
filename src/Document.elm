@@ -18,8 +18,8 @@ import Html.Styled.Events as Events
 import Json.Decode
 import Json.Encode
 import Name
-import Sheet
-import SheetStore
+import NamedAndOrderedStore exposing (NamedAndOrderedStore)
+import Sheet exposing (Sheet)
 import Types
 
 
@@ -28,12 +28,13 @@ import Types
 
 
 type alias Model =
-    SheetStore.SheetStore
+    NamedAndOrderedStore Sheet
 
 
 init : Model
 init =
-    SheetStore.init
+    Sheet.initTable
+        |> NamedAndOrderedStore.init
 
 
 
@@ -42,7 +43,7 @@ init =
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
-    SheetStore.currentSheet model
+    NamedAndOrderedStore.current model
         |> Sheet.subscriptions
         |> Sub.map SheetMsg
 
@@ -64,32 +65,32 @@ update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         SheetMsg sheetMsg ->
-            Sheet.update (SheetStore.getSheetId model) sheetMsg (SheetStore.currentSheet model)
-                |> Tuple.mapFirst (SheetStore.updateSheet model >> SheetStore.commitSheetName)
+            Sheet.update (NamedAndOrderedStore.getIdByName model) sheetMsg (NamedAndOrderedStore.current model)
+                |> Tuple.mapFirst (NamedAndOrderedStore.setCurrent model >> NamedAndOrderedStore.commitName)
                 |> Tuple.mapSecond (Cmd.map SheetMsg)
 
         InsertSheet params ->
-            ( SheetStore.createSheet params model
+            ( NamedAndOrderedStore.insert (Sheet.fromParams params) model
             , Cmd.none
             )
 
         SelectSheet sheetId ->
-            ( SheetStore.selectSheet sheetId model |> Maybe.withDefault model
+            ( NamedAndOrderedStore.selectById Sheet.commitEdit sheetId model |> Maybe.withDefault model
             , Cmd.none
             )
 
         RemoveSheet sheetId ->
-            ( SheetStore.removeSheet sheetId model
+            ( NamedAndOrderedStore.remove sheetId model
             , Cmd.none
             )
 
         EditSheet ->
-            ( SheetStore.editCurrentSheetName model
+            ( NamedAndOrderedStore.editCurrentName Sheet.commitEdit model
             , Cmd.none
             )
 
         UpdateSheetName input ->
-            ( SheetStore.updateEdit input model
+            ( NamedAndOrderedStore.updateEdit input model
             , Cmd.none
             )
 
@@ -108,7 +109,7 @@ eval model ( sheetId, ref ) ancestors =
             , resolveGlobalReference = eval model
             }
     in
-    SheetStore.getSheet sheetId model
+    NamedAndOrderedStore.getById sheetId model
         |> Result.fromMaybe
             -- Is it realy unexpected though ? Eg what happens when some sheet is removed ?
             (Types.UnexpectedError "Found an orphan sheet")
@@ -139,9 +140,9 @@ documentView model =
             , insertPivotTable =
                 Sheet.allParams.pivotTable
                     >> InsertSheet
-            , getSheetName = SheetStore.getSheetName model
+            , getSheetName = NamedAndOrderedStore.getNameById model
             , context =
-                { prefix = SheetStore.currentSheetId model
+                { prefix = NamedAndOrderedStore.currentId model
                 , ancestors = []
                 , resolveGlobalReference = eval model
                 }
@@ -161,7 +162,7 @@ documentView model =
                 , overflow hidden
                 ]
             ]
-            [ Sheet.view sheetConfig (SheetStore.currentSheet model)
+            [ Sheet.view sheetConfig (NamedAndOrderedStore.current model)
             ]
         , sheetSelector model
         ]
@@ -177,7 +178,7 @@ sheetSelector model =
                 , padding2 (px 5) (px 5)
                 ]
 
-        sheetItem ( sheetId, sheet ) =
+        sheetItem item =
             let
                 defaultItem isCurrent =
                     li
@@ -189,15 +190,15 @@ sheetSelector model =
                               else
                                 fontWeight normal
                             ]
-                        , Events.onClick <| SelectSheet sheetId
+                        , Events.onClick <| SelectSheet item.id
                         , Events.onDoubleClick <| EditSheet
                         ]
-                        [ text (Sheet.getName sheet |> Name.toString)
-                        , span [ Events.onClick <| RemoveSheet sheetId ]
+                        [ text (Name.toString item.name)
+                        , span [ Events.onClick <| RemoveSheet item.id ]
                             [ text "[x]" ]
                         ]
             in
-            case ( SheetStore.isCurrentId sheetId model, SheetStore.editStatus model ) of
+            case ( NamedAndOrderedStore.isCurrentId item.id model, NamedAndOrderedStore.editStatus model ) of
                 ( True, Just newName ) ->
                     li [ itemCss ]
                         [ input
@@ -226,15 +227,15 @@ sheetSelector model =
         ]
         (addSheet (InsertSheet Sheet.allParams.table) "+table"
             :: addSheet (InsertSheet Sheet.allParams.grid) "+grid"
-            :: (SheetStore.sheetsWithIds model |> List.map sheetItem)
+            :: (NamedAndOrderedStore.toItemList model |> List.map sheetItem)
         )
 
 
-decoder : Json.Decode.Decoder SheetStore.SheetStore
+decoder : Json.Decode.Decoder Model
 decoder =
-    SheetStore.decoder
+    NamedAndOrderedStore.decoder Sheet.decoder
 
 
-encode : SheetStore.SheetStore -> Json.Encode.Value
+encode : Model -> Json.Encode.Value
 encode =
-    SheetStore.encode
+    NamedAndOrderedStore.encode Sheet.encode

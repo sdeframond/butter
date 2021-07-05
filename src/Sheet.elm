@@ -11,11 +11,9 @@ module Sheet exposing
     , encode
     , eval
     , fromParams
-    , getName
     , initGrid
     , initPivotTable
     , initTable
-    , rename
     , subscriptions
     , update
     , view
@@ -32,9 +30,9 @@ import Types
 
 
 type Sheet
-    = GridSheet Name Grid
-    | TableSheet Name Table
-    | PivotTableSheet Name PivotTable
+    = GridSheet Grid
+    | TableSheet Table
+    | PivotTableSheet PivotTable
 
 
 type Params
@@ -58,64 +56,38 @@ allParams =
     }
 
 
-fromParams : Name -> Params -> Sheet
-fromParams name params =
+fromParams : Params -> Sheet
+fromParams params =
     case params of
         GridSheetParams ->
-            initGrid name
+            initGrid
 
         TableSheetParams ->
-            initTable name
+            initTable
 
         PivotTableSheetParams table ->
-            initPivotTable name table
+            initPivotTable table
 
 
-initGrid : Name -> Sheet
-initGrid name =
-    GridSheet name Grid.init
+initGrid : Sheet
+initGrid =
+    GridSheet Grid.init
 
 
-initTable : Name -> Sheet
-initTable name =
-    TableSheet name Table.empty
+initTable : Sheet
+initTable =
+    TableSheet Table.empty
 
 
-initPivotTable : Name -> Types.Table -> Sheet
-initPivotTable name table =
-    PivotTableSheet name (MyPivotTable.init table)
-
-
-getName : Sheet -> Name
-getName sheet =
-    case sheet of
-        GridSheet name _ ->
-            name
-
-        TableSheet name _ ->
-            name
-
-        PivotTableSheet name _ ->
-            name
-
-
-rename : Name -> Sheet -> Sheet
-rename newName sheet =
-    case sheet of
-        GridSheet _ sheetData ->
-            GridSheet newName sheetData
-
-        TableSheet _ sheetData ->
-            TableSheet newName sheetData
-
-        PivotTableSheet _ sheetData ->
-            PivotTableSheet newName sheetData
+initPivotTable : Types.Table -> Sheet
+initPivotTable table =
+    PivotTableSheet (MyPivotTable.init table)
 
 
 subscriptions : Sheet -> Sub Msg
 subscriptions sheet =
     case sheet of
-        PivotTableSheet _ pt ->
+        PivotTableSheet pt ->
             Sub.map PivotTableMsg (MyPivotTable.subscriptions pt)
 
         _ ->
@@ -131,22 +103,22 @@ type Msg
 update : (Name -> Maybe Types.SheetId) -> Msg -> Sheet -> ( Sheet, Cmd Msg )
 update getSheetId msg sheet =
     case ( msg, sheet ) of
-        ( GridMsg gridMsg, GridSheet name grid ) ->
-            ( GridSheet name <| Grid.update getSheetId gridMsg grid
+        ( GridMsg gridMsg, GridSheet grid ) ->
+            ( GridSheet <| Grid.update getSheetId gridMsg grid
             , Cmd.none
             )
 
-        ( TableMsg tableMsg, TableSheet name table ) ->
-            ( TableSheet name <| Table.update getSheetId tableMsg table
+        ( TableMsg tableMsg, TableSheet table ) ->
+            ( TableSheet <| Table.update getSheetId tableMsg table
             , Cmd.none
             )
 
-        ( PivotTableMsg ptMsg, PivotTableSheet name pt ) ->
+        ( PivotTableMsg ptMsg, PivotTableSheet pt ) ->
             let
                 ( newPt, cmd ) =
                     MyPivotTable.update ptMsg pt
             in
-            ( PivotTableSheet name newPt
+            ( PivotTableSheet newPt
             , Cmd.map PivotTableMsg cmd
             )
 
@@ -157,8 +129,8 @@ update getSheetId msg sheet =
 commitEdit : Sheet -> Sheet
 commitEdit sheet =
     case sheet of
-        GridSheet name grid ->
-            GridSheet name (Grid.commit grid)
+        GridSheet grid ->
+            GridSheet (Grid.commit grid)
 
         _ ->
             sheet
@@ -171,7 +143,7 @@ type alias Context =
 eval : Name -> Context -> Sheet -> Types.ValueOrError
 eval ref context sheet =
     case sheet of
-        GridSheet _ grid ->
+        GridSheet grid ->
             Grid.evalCell grid context ref
 
         _ ->
@@ -210,13 +182,13 @@ view config sheet =
             }
     in
     case sheet of
-        GridSheet _ grid ->
+        GridSheet grid ->
             Grid.view gridConfig grid
 
-        TableSheet _ table ->
+        TableSheet table ->
             Table.view tableConfig table
 
-        PivotTableSheet _ pt ->
+        PivotTableSheet pt ->
             MyPivotTable.view (PivotTableMsg >> config.toMsg) pt
 
 
@@ -236,35 +208,27 @@ jsonKeys =
 decoder : (Name -> Maybe Types.SheetId) -> Decode.Decoder Sheet
 decoder getSheetId =
     let
-        help makeSheet field sheetDecoder =
-            Decode.map2 makeSheet
-                (Decode.field jsonKeys.name Name.decoder)
-                (Decode.field field sheetDecoder)
+        sheetDecoder makeSheet field valueDecoder =
+            Decode.map makeSheet <| Decode.field field valueDecoder
     in
     Decode.oneOf
-        [ help GridSheet jsonKeys.grid <| Grid.decoder getSheetId
-        , help TableSheet jsonKeys.table <| Table.decoder getSheetId
-        , help PivotTableSheet jsonKeys.pivotTable MyPivotTable.decoder
+        [ sheetDecoder GridSheet jsonKeys.grid <| Grid.decoder getSheetId
+        , sheetDecoder TableSheet jsonKeys.table <| Table.decoder getSheetId
+        , sheetDecoder PivotTableSheet jsonKeys.pivotTable MyPivotTable.decoder
         ]
 
 
 encode : (Types.SheetId -> Maybe Name) -> Sheet -> Encode.Value
 encode getSheetName sheet =
     case sheet of
-        GridSheet name grid ->
+        GridSheet grid ->
             Encode.object
-                [ ( jsonKeys.name, Name.encode name )
-                , ( jsonKeys.grid, Grid.encode getSheetName grid )
-                ]
+                [ ( jsonKeys.grid, Grid.encode getSheetName grid ) ]
 
-        TableSheet name table ->
+        TableSheet table ->
             Encode.object
-                [ ( jsonKeys.name, Name.encode name )
-                , ( jsonKeys.table, Table.encode getSheetName table )
-                ]
+                [ ( jsonKeys.table, Table.encode getSheetName table ) ]
 
-        PivotTableSheet name pivotTable ->
+        PivotTableSheet pivotTable ->
             Encode.object
-                [ ( jsonKeys.name, Name.encode name )
-                , ( jsonKeys.pivotTable, MyPivotTable.encode pivotTable )
-                ]
+                [ ( jsonKeys.pivotTable, MyPivotTable.encode pivotTable ) ]

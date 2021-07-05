@@ -51,6 +51,7 @@ Doing
 Done
 ====
 
+- 2021-07-05 - Make SheetStore a generic store. Maybe by moving some more logic into ZipList ? (Like renameSheet and removeSheet)
 - 2021-05-11 - Feature : Local storage
 - 2021-05-07 - Enabler : encapsulate Name in order to make sure it is parsed.
 - 2021-05-05 - Refactor : Move sheet selection and edition next to where the data is defined (maybe into Document ?)
