@@ -21,6 +21,7 @@ import Name
 import NamedAndOrderedStore exposing (NamedAndOrderedStore)
 import Sheet exposing (Sheet)
 import Types
+import Ui
 
 
 
@@ -171,19 +172,11 @@ documentView model =
 sheetSelector : Model -> Html Msg
 sheetSelector model =
     let
-        itemCss =
-            css
-                [ border3 (px 1) solid (rgb 100 100 100)
-                , display inlineBlock
-                , padding2 (px 5) (px 5)
-                ]
-
         sheetItem item =
             let
                 defaultItem isCurrent =
-                    li
-                        [ itemCss
-                        , css
+                    Ui.button
+                        [ css
                             [ if isCurrent then
                                 fontWeight bold
 
@@ -200,7 +193,7 @@ sheetSelector model =
             in
             case ( NamedAndOrderedStore.isCurrentId item.id model, NamedAndOrderedStore.editStatus model ) of
                 ( True, Just newName ) ->
-                    li [ itemCss ]
+                    Ui.button []
                         [ input
                             [ Attr.value newName
                             , Events.onInput UpdateSheetName
@@ -212,17 +205,15 @@ sheetSelector model =
                     defaultItem isCurrent
 
         addSheet msg label =
-            li
-                [ itemCss
-                , Events.onClick msg
+            Ui.button
+                [ Events.onClick msg
                 ]
                 [ text label ]
     in
-    ul
+    div
         [ css
-            [ borderTop3 (px 1) solid (rgb 0 0 0)
-            , margin (px 0)
-            , padding2 (px 10) (px 10)
+            [ displayFlex
+            , flexDirection row
             ]
         ]
         (addSheet (InsertSheet Sheet.allParams.table) "+table"

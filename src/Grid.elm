@@ -326,7 +326,7 @@ view { toMsg, getSheetName, context } (Grid ({ editState } as data)) =
                                 :: mapColumns (cellView row)
                     )
     in
-    Ui.row
+    Ui.row []
         [ H.table
             [ css
                 [ borderCollapse collapse
@@ -340,7 +340,7 @@ view { toMsg, getSheetName, context } (Grid ({ editState } as data)) =
             ]
         , case data.editState of
             Just ( _, cell ) ->
-                Ui.column [ cellPropertiesView toMsg cell ]
+                Ui.column [] [ cellPropertiesView toMsg cell ]
 
             Nothing ->
                 text ""
@@ -350,7 +350,8 @@ view { toMsg, getSheetName, context } (Grid ({ editState } as data)) =
 cellPropertiesView : (Msg -> msg) -> Cell -> Html msg
 cellPropertiesView toMsg cell =
     H.div []
-        [ H.button [ onClick (OnClickCellTypeBtn |> toMsg) ]
+        [ Ui.button
+            [ onClick (OnClickCellTypeBtn |> toMsg) ]
             [ case cell of
                 FormulaCell _ ->
                     text "Formula"
@@ -363,7 +364,8 @@ cellPropertiesView toMsg cell =
                 text ""
 
             DataCell dataType _ ->
-                H.button [ onClick (OnClickCellDataTypeBtn |> toMsg) ]
+                Ui.button
+                    [ onClick (OnClickCellDataTypeBtn |> toMsg) ]
                     [ case dataType of
                         Types.IntType ->
                             text "Int"

@@ -268,9 +268,9 @@ updateData getSheetId msg data =
 
 view : Config msg -> Table -> Html msg
 view config ((Table data) as table) =
-    Ui.row
+    Ui.row []
         [ tableView config data
-        , Ui.column
+        , Ui.column []
             [ formView data.fieldForm config.getSheetName config.toMsg
             , addPivotTableButton table config.insertPivotTable
             ]
@@ -296,7 +296,7 @@ formView form getSheetName toMsg =
             , onInput (OnInputNewFieldName >> toMsg)
             ]
             []
-        , H.button [ onClick (OnClickNewFieldTypeBtn |> toMsg) ]
+        , Ui.button [ onClick (OnClickNewFieldTypeBtn |> toMsg) ]
             [ case form.fieldType of
                 FormulaField _ ->
                     text "Formula"
@@ -319,7 +319,7 @@ formView form getSheetName toMsg =
                     []
 
             DataField dataType ->
-                H.button [ onClick (OnClickNewFieldDataTypeBtn |> toMsg) ]
+                Ui.button [ onClick (OnClickNewFieldDataTypeBtn |> toMsg) ]
                     [ case dataType of
                         IntType ->
                             text "Int"
@@ -327,7 +327,7 @@ formView form getSheetName toMsg =
                         StringType ->
                             text "String"
                     ]
-        , H.button [ onClick (OnClickAddFieldBtn |> toMsg) ] [ text "add" ]
+        , Ui.button [ onClick (OnClickAddFieldBtn |> toMsg) ] [ text "add" ]
         ]
 
 
@@ -338,7 +338,7 @@ addPivotTableButton table makePivotTable =
         lazyOnClick tagger =
             on "click" (Decode.succeed () |> Decode.map tagger)
     in
-    H.button [ lazyOnClick (\_ -> makePivotTable table) ] [ text "Make PivotTable" ]
+    Ui.button [ lazyOnClick (\_ -> makePivotTable table) ] [ text "Make PivotTable" ]
 
 
 type alias Context =
