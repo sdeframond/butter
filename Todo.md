@@ -46,11 +46,11 @@ Todo
 Doing
 =====
 
-- Feature : Save to file (and load file)
 
 Done
 ====
 
+- 2021-07-07 - Feature : Save to file (and load file)
 - 2021-07-05 - Make SheetStore a generic store. Maybe by moving some more logic into ZipList ? (Like renameSheet and removeSheet)
 - 2021-05-11 - Feature : Local storage
 - 2021-05-07 - Enabler : encapsulate Name in order to make sure it is parsed.

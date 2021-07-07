@@ -1,8 +1,14 @@
-module Ui exposing (button, column, row)
+module Ui exposing (button, column, fullRow, row)
 
 import Css exposing (..)
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes exposing (css)
+
+
+fullRow : List (H.Attribute msg) -> List (Html msg) -> Html msg
+fullRow attrs content =
+    row (css [ height (pct 100) ] :: attrs)
+        content
 
 
 row : List (H.Attribute msg) -> List (Html msg) -> Html msg
@@ -11,7 +17,6 @@ row attrs content =
         (css
             [ displayFlex
             , flexDirection Css.row
-            , height (pct 100)
             ]
             :: attrs
         )

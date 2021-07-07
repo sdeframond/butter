@@ -9,8 +9,13 @@ module Document exposing
     , view
     )
 
+import Bytes exposing (Bytes)
+import Bytes.Encode
 import Css exposing (..)
 import Css.Global as Global
+import File exposing (File)
+import File.Download exposing (bytes)
+import File.Select
 import Html
 import Html.Styled exposing (..)
 import Html.Styled.Attributes as Attr exposing (css)
@@ -20,8 +25,12 @@ import Json.Encode
 import Name
 import NamedAndOrderedStore exposing (NamedAndOrderedStore)
 import Sheet exposing (Sheet)
+import Task
+import Time
 import Types
 import Ui
+import Zip
+import Zip.Entry as Entry
 
 
 
@@ -36,6 +45,38 @@ init : Model
 init =
     Sheet.initTable
         |> NamedAndOrderedStore.init
+
+
+toBytes : Model -> Bytes
+toBytes doc =
+    Json.Encode.encode 2 (encode doc)
+        |> (Bytes.Encode.encode << Bytes.Encode.string)
+        |> Entry.compress
+            { path = "/main.json"
+
+            -- We don't care about this.
+            , lastModified = ( Time.utc, Time.millisToPosix 0 )
+            , comment = Nothing
+            }
+        |> List.singleton
+        |> Zip.fromEntries
+        |> Zip.toBytes
+
+
+fromBytes : Bytes -> Maybe Model
+fromBytes bytes =
+    Zip.fromBytes bytes
+        |> Maybe.andThen (Zip.getEntry "/main.json")
+        |> Maybe.andThen
+            (\entry ->
+                case Entry.toString entry of
+                    Ok string ->
+                        Json.Decode.decodeString decoder string
+                            |> Result.toMaybe
+
+                    Err _ ->
+                        Nothing
+            )
 
 
 
@@ -60,6 +101,10 @@ type Msg
     | RemoveSheet Types.SheetId
     | EditSheet
     | UpdateSheetName String
+    | OpenDocument
+    | DocumentLoaded File
+    | DocumentsBytesLoaded Bytes
+    | DownloadDocument
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -93,6 +138,28 @@ update msg model =
         UpdateSheetName input ->
             ( NamedAndOrderedStore.updateEdit input model
             , Cmd.none
+            )
+
+        OpenDocument ->
+            ( model
+            , File.Select.file [ "application/butter" ] DocumentLoaded
+            )
+
+        DocumentLoaded file ->
+            ( model
+            , Task.perform DocumentsBytesLoaded (File.toBytes file)
+            )
+
+        DocumentsBytesLoaded bytes ->
+            ( fromBytes bytes
+                |> Maybe.withDefault model
+            , Cmd.none
+            )
+
+        DownloadDocument ->
+            ( model
+            , toBytes model
+                |> File.Download.bytes "document.butter" "application/butter"
             )
 
 
@@ -165,7 +232,19 @@ documentView model =
             ]
             [ Sheet.view sheetConfig (NamedAndOrderedStore.current model)
             ]
-        , sheetSelector model
+        , Ui.row
+            [ css
+                [ borderTop3 (px 1) solid (rgb 0 0 0)
+                , justifyContent spaceBetween
+                , padding2 (px 10) (px 10)
+                ]
+            ]
+            [ sheetSelector model
+            , Ui.row []
+                [ Ui.button [ Events.onClick OpenDocument ] [ text "Open..." ]
+                , Ui.button [ Events.onClick DownloadDocument ] [ text "Download" ]
+                ]
+            ]
         ]
 
 
@@ -210,12 +289,7 @@ sheetSelector model =
                 ]
                 [ text label ]
     in
-    div
-        [ css
-            [ displayFlex
-            , flexDirection row
-            ]
-        ]
+    Ui.row []
         (addSheet (InsertSheet Sheet.allParams.table) "+table"
             :: addSheet (InsertSheet Sheet.allParams.grid) "+grid"
             :: (NamedAndOrderedStore.toItemList model |> List.map sheetItem)

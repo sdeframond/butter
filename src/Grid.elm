@@ -326,7 +326,7 @@ view { toMsg, getSheetName, context } (Grid ({ editState } as data)) =
                                 :: mapColumns (cellView row)
                     )
     in
-    Ui.row []
+    Ui.fullRow []
         [ H.table
             [ css
                 [ borderCollapse collapse

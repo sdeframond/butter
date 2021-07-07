@@ -268,7 +268,7 @@ updateData getSheetId msg data =
 
 view : Config msg -> Table -> Html msg
 view config ((Table data) as table) =
-    Ui.row []
+    Ui.fullRow []
         [ tableView config data
         , Ui.column []
             [ formView data.fieldForm config.getSheetName config.toMsg
