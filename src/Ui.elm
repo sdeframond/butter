@@ -1,8 +1,9 @@
-module Ui exposing (button, column, fullRow, row)
+module Ui exposing (button, column, editableListItem, fullRow, row)
 
 import Css exposing (..)
 import Html.Styled as H exposing (Html)
-import Html.Styled.Attributes exposing (css)
+import Html.Styled.Attributes as Attr exposing (css)
+import Html.Styled.Events as Events
 
 
 fullRow : List (H.Attribute msg) -> List (Html msg) -> Html msg
@@ -49,3 +50,63 @@ button attrs content =
             :: attrs
         )
         content
+
+
+type alias EditableListItemConfig id msg =
+    { onSelect : id -> msg
+    , onEdit : msg
+    , onRemove : id -> msg
+    , onUpdate : String -> msg
+    }
+
+
+type alias EditableListItem id =
+    { id : id
+    , name : String
+    , isCurrent : Bool
+    , editStatus : Maybe String
+    }
+
+
+editableListItem : EditableListItemConfig id msg -> EditableListItem id -> Html msg
+editableListItem { onSelect, onEdit, onRemove, onUpdate } item =
+    let
+        defaultItem isCurrent =
+            button
+                [ css
+                    [ if isCurrent then
+                        fontWeight bold
+
+                      else
+                        fontWeight normal
+                    , displayFlex
+                    , justifyContent spaceBetween
+                    , overflow hidden
+                    ]
+                , Events.onClick <| onSelect item.id
+                , Events.onDoubleClick <| onEdit
+                ]
+                [ H.span
+                    [ css
+                        [ overflow hidden
+                        , textOverflow ellipsis
+                        , marginRight (px 5)
+                        ]
+                    ]
+                    [ H.text item.name ]
+                , H.span [ Events.onClick <| onRemove item.id ]
+                    [ H.text "[x]" ]
+                ]
+    in
+    case ( item.isCurrent, item.editStatus ) of
+        ( True, Just newName ) ->
+            button []
+                [ H.input
+                    [ Attr.value newName
+                    , Events.onInput onUpdate
+                    ]
+                    []
+                ]
+
+        ( isCurrent, _ ) ->
+            defaultItem isCurrent

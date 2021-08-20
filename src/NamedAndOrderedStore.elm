@@ -1,5 +1,6 @@
 module NamedAndOrderedStore exposing
-    ( NamedAndOrderedStore
+    ( Id
+    , NamedAndOrderedStore
     , commitName
     , current
     , currentId
@@ -27,7 +28,7 @@ import DecodeHelpers
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Name exposing (Name)
-import PositiveInt exposing (PositiveInt)
+import PositiveInt as Id exposing (PositiveInt)
 import Types
 import ZipList as ZL exposing (ZipList)
 
@@ -48,23 +49,24 @@ type alias Item a =
     { id : PositiveInt, name : Name, value : a }
 
 
+type alias Id =
+    PositiveInt
+
+
 
 -- INIT
 
 
-init : a -> NamedAndOrderedStore a
-init item =
+init : Name -> a -> NamedAndOrderedStore a
+init initName item =
     let
         initId =
-            PositiveInt.one
-
-        initName =
-            Name.fromSheetId initId
+            Id.one
     in
     Store
         { items = ZL.singleton { id = initId, name = initName, value = item }
         , nameIndex = Name.fromList [ ( initName, initId ) ]
-        , nextId = PositiveInt.next initId
+        , nextId = Id.next initId
         , edit = Nothing
         }
 
@@ -89,7 +91,7 @@ current store =
     currentItem store |> .value
 
 
-currentId : NamedAndOrderedStore a -> PositiveInt
+currentId : NamedAndOrderedStore a -> Id
 currentId store =
     currentItem store |> .id
 
@@ -104,12 +106,12 @@ toItemList (Store { items }) =
     items |> ZL.toList
 
 
-isCurrentId : PositiveInt -> NamedAndOrderedStore a -> Bool
+isCurrentId : Id -> NamedAndOrderedStore a -> Bool
 isCurrentId id model =
     id == currentId model
 
 
-selectById : (a -> a) -> PositiveInt -> NamedAndOrderedStore a -> Maybe (NamedAndOrderedStore a)
+selectById : (a -> a) -> Id -> NamedAndOrderedStore a -> Maybe (NamedAndOrderedStore a)
 selectById onBlur selectedId store =
     let
         (Store model) =
@@ -120,54 +122,69 @@ selectById onBlur selectedId store =
         |> Maybe.map Store
 
 
-getById : PositiveInt -> NamedAndOrderedStore a -> Maybe a
+getById : Id -> NamedAndOrderedStore a -> Maybe a
 getById id (Store { items }) =
     ZL.get (.id >> (==) id) items
         |> Maybe.map .value
 
 
-getNameById : NamedAndOrderedStore a -> PositiveInt -> Maybe Name
+getNameById : NamedAndOrderedStore a -> Id -> Maybe Name
 getNameById (Store { items }) id =
     ZL.get (.id >> (==) id) items
         |> Maybe.map .name
 
 
-getIdByName : NamedAndOrderedStore a -> Name -> Maybe PositiveInt
+getIdByName : NamedAndOrderedStore a -> Name -> Maybe Id
 getIdByName (Store { items }) name =
     ZL.get (.name >> (==) name) items
         |> Maybe.map .id
 
 
-insert : a -> NamedAndOrderedStore a -> NamedAndOrderedStore a
-insert item (Store model) =
+insert : Name -> a -> NamedAndOrderedStore a -> NamedAndOrderedStore a
+insert name item (Store model) =
     let
-        name =
-            Name.fromSheetId model.nextId
+        finalName =
+            nameHelp name 1
+
+        nameHelp name_ i =
+            let
+                nextName =
+                    Name.appendInt name_ i
+            in
+            if Name.member nextName model.nameIndex then
+                nameHelp name_ (i + 1)
+
+            else
+                nextName
     in
     Store <|
         { model
-            | items = ZL.append [ { id = model.nextId, name = name, value = item } ] model.items
-            , nextId = PositiveInt.next model.nextId
-            , nameIndex = Name.insert name model.nextId model.nameIndex
+            | items = ZL.append [ { id = model.nextId, name = finalName, value = item } ] model.items
+            , nextId = Id.next model.nextId
+            , nameIndex = Name.insert finalName model.nextId model.nameIndex
         }
 
 
-remove : PositiveInt -> NamedAndOrderedStore a -> NamedAndOrderedStore a
-remove id ((Store data) as model) =
-    ZL.filter (.id >> (/=) id) data.items
-        |> Maybe.map
-            (\items ->
-                { data
-                    | items = items
-                    , nameIndex =
-                        Name.remove (currentName model) data.nameIndex
-                }
+remove : Id -> NamedAndOrderedStore a -> NamedAndOrderedStore a
+remove id (Store data) =
+    ZL.get (.id >> (==) id) data.items
+        |> Maybe.andThen
+            (\toDelete ->
+                ZL.filter (.id >> (/=) id) data.items
+                    |> Maybe.map
+                        (\items ->
+                            { data
+                                | items = items
+                                , nameIndex =
+                                    Name.remove toDelete.name data.nameIndex
+                            }
+                        )
             )
         |> Maybe.withDefault data
         |> Store
 
 
-rename : PositiveInt -> String -> NamedAndOrderedStore a -> Result Types.Error (NamedAndOrderedStore a)
+rename : Id -> String -> NamedAndOrderedStore a -> Result Types.Error (NamedAndOrderedStore a)
 rename id input ((Store data) as model) =
     let
         updateSheetName : ( Name, Name ) -> Data a -> NamedAndOrderedStore a
@@ -202,7 +219,7 @@ rename id input ((Store data) as model) =
                     |> Maybe.map (Tuple.pair name)
                     |> Result.fromMaybe
                         (Types.UnexpectedError
-                            ("Invalid SheetId: " ++ PositiveInt.toString id)
+                            ("Invalid SheetId: " ++ Id.toString id)
                         )
                     |> Result.map updateSheetName
                     |> Result.map (\updater -> updater data)
@@ -304,7 +321,7 @@ jsonKeys =
     }
 
 
-decoder : ((Name -> Maybe PositiveInt) -> Decode.Decoder a) -> Decode.Decoder (NamedAndOrderedStore a)
+decoder : ((Name -> Maybe Id) -> Decode.Decoder a) -> Decode.Decoder (NamedAndOrderedStore a)
 decoder makeValueDecoder =
     let
         getId ids name =
@@ -319,9 +336,9 @@ decoder makeValueDecoder =
                     |> ZL.decoder
                     |> Decode.field jsonKeys.items
                 )
-                (Decode.field jsonKeys.nextId PositiveInt.decoder)
+                (Decode.field jsonKeys.nextId Id.decoder)
     in
-    Decode.field jsonKeys.nameIndex (Name.storeDecoder PositiveInt.decoder)
+    Decode.field jsonKeys.nameIndex (Name.storeDecoder Id.decoder)
         |> Decode.andThen finalize
         |> Decode.map Store
 
@@ -341,12 +358,12 @@ editStatusDecoder =
 itemDecoder : Decode.Decoder a -> Decode.Decoder (Item a)
 itemDecoder valueDecoder =
     Decode.map3 Item
-        (Decode.field jsonKeys.id PositiveInt.decoder)
+        (Decode.field jsonKeys.id Id.decoder)
         (Decode.field jsonKeys.name Name.decoder)
         (Decode.field jsonKeys.value <| valueDecoder)
 
 
-encode : ((PositiveInt -> Maybe Name) -> a -> Encode.Value) -> NamedAndOrderedStore a -> Encode.Value
+encode : ((Id -> Maybe Name) -> a -> Encode.Value) -> NamedAndOrderedStore a -> Encode.Value
 encode makeValueEncoder ((Store data) as store) =
     let
         getName id =
@@ -354,8 +371,8 @@ encode makeValueEncoder ((Store data) as store) =
     in
     Encode.object
         [ ( jsonKeys.edit, encodeEditStatus data.edit )
-        , ( jsonKeys.nextId, PositiveInt.encode data.nextId )
-        , ( jsonKeys.nameIndex, Name.encodeStore PositiveInt.encode data.nameIndex )
+        , ( jsonKeys.nextId, Id.encode data.nextId )
+        , ( jsonKeys.nameIndex, Name.encodeStore Id.encode data.nameIndex )
         , ( jsonKeys.items, ZL.encode (encodeItem (makeValueEncoder getName)) data.items )
         ]
 
@@ -377,7 +394,7 @@ encodeEditStatus status =
 encodeItem : (a -> Encode.Value) -> Item a -> Encode.Value
 encodeItem encodeValue { id, name, value } =
     Encode.object
-        [ ( jsonKeys.id, PositiveInt.encode id )
+        [ ( jsonKeys.id, Id.encode id )
         , ( jsonKeys.name, Name.encode name )
         , ( jsonKeys.value, encodeValue value )
         ]

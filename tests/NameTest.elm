@@ -24,13 +24,13 @@ suite =
             , ( "contains a space", "foo bar", Nothing )
             , ( "contains a dot", "foo.bar", Nothing )
             ]
-        , test "fromSheetId produces a valid name" <|
+        , test "appendInt produces a valid name" <|
             \_ ->
-                Name.fromSheetId PositiveInt.one
+                Name.appendInt (Name.unsafeFromString "name") 24525
                     |> Name.toString
                     |> Name.fromString
                     |> Maybe.map Name.toString
-                    |> Expect.equal (Just "Sheet1")
+                    |> Expect.equal (Just "name24525")
         , test "fromCoord produces a valid name" <|
             \_ ->
                 Name.fromCoord PositiveInt.one PositiveInt.one

@@ -3,6 +3,7 @@ module Document exposing
     , Msg(..)
     , decoder
     , encode
+    , fromBytes
     , init
     , subscriptions
     , update
@@ -12,20 +13,15 @@ module Document exposing
 import Bytes exposing (Bytes)
 import Bytes.Encode
 import Css exposing (..)
-import Css.Global as Global
-import File exposing (File)
 import File.Download exposing (bytes)
-import File.Select
-import Html
 import Html.Styled exposing (..)
-import Html.Styled.Attributes as Attr exposing (css)
+import Html.Styled.Attributes exposing (css)
 import Html.Styled.Events as Events
 import Json.Decode
 import Json.Encode
-import Name
+import Name exposing (Name)
 import NamedAndOrderedStore exposing (NamedAndOrderedStore)
 import Sheet exposing (Sheet)
-import Task
 import Time
 import Types
 import Ui
@@ -41,10 +37,15 @@ type alias Model =
     NamedAndOrderedStore Sheet
 
 
+defaultSheetName : Name
+defaultSheetName =
+    Name.unsafeFromString "Sheet"
+
+
 init : Model
 init =
     Sheet.initTable
-        |> NamedAndOrderedStore.init
+        |> NamedAndOrderedStore.init defaultSheetName
 
 
 toBytes : Model -> Bytes
@@ -101,9 +102,6 @@ type Msg
     | RemoveSheet Types.SheetId
     | EditSheet
     | UpdateSheetName String
-    | OpenDocument
-    | DocumentLoaded File
-    | DocumentsBytesLoaded Bytes
     | DownloadDocument
 
 
@@ -116,7 +114,7 @@ update msg model =
                 |> Tuple.mapSecond (Cmd.map SheetMsg)
 
         InsertSheet params ->
-            ( NamedAndOrderedStore.insert (Sheet.fromParams params) model
+            ( NamedAndOrderedStore.insert defaultSheetName (Sheet.fromParams params) model
             , Cmd.none
             )
 
@@ -137,22 +135,6 @@ update msg model =
 
         UpdateSheetName input ->
             ( NamedAndOrderedStore.updateEdit input model
-            , Cmd.none
-            )
-
-        OpenDocument ->
-            ( model
-            , File.Select.file [ "application/butter" ] DocumentLoaded
-            )
-
-        DocumentLoaded file ->
-            ( model
-            , Task.perform DocumentsBytesLoaded (File.toBytes file)
-            )
-
-        DocumentsBytesLoaded bytes ->
-            ( fromBytes bytes
-                |> Maybe.withDefault model
             , Cmd.none
             )
 
@@ -188,19 +170,35 @@ eval model ( sheetId, ref ) ancestors =
 -- VIEW
 
 
-view : Model -> List (Html.Html Msg)
+view : Model -> Html Msg
 view model =
-    List.map toUnstyled
-        [ Global.global
-            [ Global.html [ height (pct 100) ]
-            , Global.body [ height (pct 100) ]
+    div
+        [ css
+            [ displayFlex
+            , flexDirection column
+            , height (pct 100)
+            , width (pct 100)
+            , overflow hidden
             ]
-        , documentView model
+        ]
+        [ viewCurrentSheet model
+        , Ui.row
+            [ css
+                [ borderTop3 (px 1) solid (rgb 0 0 0)
+                , justifyContent spaceBetween
+                , padding2 (px 10) (px 10)
+                ]
+            ]
+            [ sheetSelector model
+            , Ui.row []
+                [ Ui.button [ Events.onClick DownloadDocument ] [ text "Download" ]
+                ]
+            ]
         ]
 
 
-documentView : Model -> Html Msg
-documentView model =
+viewCurrentSheet : Model -> Html Msg
+viewCurrentSheet model =
     let
         sheetConfig : Sheet.Config Msg
         sheetConfig =
@@ -218,33 +216,12 @@ documentView model =
     in
     div
         [ css
-            [ displayFlex
-            , flexDirection column
+            [ width (pct 100)
             , height (pct 100)
+            , overflow hidden
             ]
         ]
-        [ div
-            [ css
-                [ width (pct 100)
-                , height (pct 100)
-                , overflow hidden
-                ]
-            ]
-            [ Sheet.view sheetConfig (NamedAndOrderedStore.current model)
-            ]
-        , Ui.row
-            [ css
-                [ borderTop3 (px 1) solid (rgb 0 0 0)
-                , justifyContent spaceBetween
-                , padding2 (px 10) (px 10)
-                ]
-            ]
-            [ sheetSelector model
-            , Ui.row []
-                [ Ui.button [ Events.onClick OpenDocument ] [ text "Open..." ]
-                , Ui.button [ Events.onClick DownloadDocument ] [ text "Download" ]
-                ]
-            ]
+        [ Sheet.view sheetConfig (NamedAndOrderedStore.current model)
         ]
 
 
@@ -252,36 +229,17 @@ sheetSelector : Model -> Html Msg
 sheetSelector model =
     let
         sheetItem item =
-            let
-                defaultItem isCurrent =
-                    Ui.button
-                        [ css
-                            [ if isCurrent then
-                                fontWeight bold
-
-                              else
-                                fontWeight normal
-                            ]
-                        , Events.onClick <| SelectSheet item.id
-                        , Events.onDoubleClick <| EditSheet
-                        ]
-                        [ text (Name.toString item.name)
-                        , span [ Events.onClick <| RemoveSheet item.id ]
-                            [ text "[x]" ]
-                        ]
-            in
-            case ( NamedAndOrderedStore.isCurrentId item.id model, NamedAndOrderedStore.editStatus model ) of
-                ( True, Just newName ) ->
-                    Ui.button []
-                        [ input
-                            [ Attr.value newName
-                            , Events.onInput UpdateSheetName
-                            ]
-                            []
-                        ]
-
-                ( isCurrent, _ ) ->
-                    defaultItem isCurrent
+            Ui.editableListItem
+                { onSelect = SelectSheet
+                , onEdit = EditSheet
+                , onRemove = RemoveSheet
+                , onUpdate = UpdateSheetName
+                }
+                { id = item.id
+                , name = Name.toString item.name
+                , isCurrent = NamedAndOrderedStore.isCurrentId item.id model
+                , editStatus = NamedAndOrderedStore.editStatus model
+                }
 
         addSheet msg label =
             Ui.button

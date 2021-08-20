@@ -31,7 +31,7 @@ suite =
         sourceView : (Name -> Maybe Types.SheetId) -> String -> Maybe String
         sourceView getSheetId =
             Formula.fromSource getSheetId
-                >> Formula.sourceView (always (Just (Name.fromSheetId PositiveInt.one)))
+                >> Formula.sourceView (always (Just (Name.unsafeFromString "name")))
     in
     describe "Formula"
         [ -- TODO: add fuzzing when it will be possible to make advanced string fuzzers.
@@ -72,7 +72,7 @@ suite =
             , ( "string", "\"a\"", Just "\"a\"" )
             , ( "simple addition", "1 + 2", Just "1+2" )
             , ( "local ref", "foo123", Just "foo123" )
-            , ( "absolute ref to existing value", "foo123.bar123", Just "Sheet1.bar123" )
+            , ( "absolute ref to existing value", "foo123.bar123", Just "name.bar123" )
             ]
         , testCollection "sourceView when id not found"
             (sourceView (always Nothing))

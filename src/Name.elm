@@ -1,13 +1,13 @@
 module Name exposing
     ( Name
     , Store
+    , appendInt
     , decoder
     , empty
     , encode
     , encodeStore
     , fromCoord
     , fromList
-    , fromSheetId
     , fromString
     , get
     , insert
@@ -18,6 +18,7 @@ module Name exposing
     , removeString
     , storeDecoder
     , toString
+    , unsafeFromString
     )
 
 import Dict exposing (Dict)
@@ -49,9 +50,14 @@ fromString input =
     P.run parser_ input |> Result.toMaybe
 
 
-fromSheetId : PositiveInt -> Name
-fromSheetId i =
-    Name ("Sheet" ++ PositiveInt.toString i)
+unsafeFromString : String -> Name
+unsafeFromString string =
+    Name string
+
+
+appendInt : Name -> Int -> Name
+appendInt (Name str) i =
+    Name (str ++ String.fromInt i)
 
 
 fromCoord : PositiveInt -> PositiveInt -> Name

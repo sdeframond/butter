@@ -20,23 +20,24 @@ Table ranges :
 Todo
 ====
 
-- Bug : accept non-ascii letter in names.
 - Enabler : Remove dependency to elm-sortable-table (implement my own)
     - Benefits : to store current state in local storage
     - Benefit : to facilitate having a consistent look across sheet types
 - Feature : Common look for Grid, Table and PivotTable
+- Enabler : use elm-serializer instead of encoder/decoder
 - Feature : Functions (which ones ?)
-- Feature : Edit table field definition
+- Feature : Edit table's field definitions
 - Feature : add more aggregate functions to Pivot Tables
 - Feature : Cancel cell edition with Echap
 - Feature : Cancel sheet edition with Echap
 - Feature : CSV import
 - Feature : Copy/paste (bonus : support copy-pasting from Excel)
 - Feature : More operators (* , ^, /, unary +, ++ on strings) and parenthesis 
-- Feature : automatically update a pivot table when its source change (dat and fields)
+- Bug : accept non-ascii letter in names.
 - Feature : Support large sheets (#row and col > 1_000_000)
 - Feature : Re-order sheets
 - Feature : Support floating precision numbers
+- Feature : automatically update a pivot table when its source change (dat and fields)
 
 - Enabler : Test coverage
     - Tried on Apr. 5, does not work out of the box.
@@ -50,6 +51,7 @@ Doing
 Done
 ====
 
+- 2021-08-21 - Multiple documents
 - 2021-07-07 - Feature : Save to file (and load file)
 - 2021-07-05 - Make SheetStore a generic store. Maybe by moving some more logic into ZipList ? (Like renameSheet and removeSheet)
 - 2021-05-11 - Feature : Local storage
