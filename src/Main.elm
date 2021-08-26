@@ -46,7 +46,7 @@ type alias Model =
 
 defaultDocumentName : Name
 defaultDocumentName =
-    Name.unsafeFromString "Document"
+    Name.sanitize "Document"
 
 
 init : Encode.Value -> ( Model, Cmd Msg )

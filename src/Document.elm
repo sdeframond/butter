@@ -39,7 +39,7 @@ type alias Model =
 
 defaultSheetName : Name
 defaultSheetName =
-    Name.unsafeFromString "Sheet"
+    Name.sanitize "Sheet"
 
 
 init : Model

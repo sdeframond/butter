@@ -31,7 +31,7 @@ suite =
         sourceView : (Name -> Maybe Types.SheetId) -> String -> Maybe String
         sourceView getSheetId =
             Formula.fromSource getSheetId
-                >> Formula.sourceView (always (Just (Name.unsafeFromString "name")))
+                >> Formula.sourceView (always (Just (Name.sanitize "name")))
     in
     describe "Formula"
         [ -- TODO: add fuzzing when it will be possible to make advanced string fuzzers.

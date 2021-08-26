@@ -16,9 +16,9 @@ module Name exposing
     , parser
     , remove
     , removeString
+    , sanitize
     , storeDecoder
     , toString
-    , unsafeFromString
     )
 
 import Dict exposing (Dict)
@@ -50,9 +50,10 @@ fromString input =
     P.run parser_ input |> Result.toMaybe
 
 
-unsafeFromString : String -> Name
-unsafeFromString string =
-    Name string
+sanitize : String -> Name
+sanitize input =
+    fromString input
+        |> Maybe.withDefault (Name "name")
 
 
 appendInt : Name -> Int -> Name

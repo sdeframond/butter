@@ -20,6 +20,8 @@ Table ranges :
 Todo
 ====
 
+- Document name == filename
+- Multi-tab/window support
 - Enabler : Remove dependency to elm-sortable-table (implement my own)
     - Benefits : to store current state in local storage
     - Benefit : to facilitate having a consistent look across sheet types
@@ -51,6 +53,7 @@ Doing
 Done
 ====
 
+- 2021-08-26 - Name.sanitize instead of unsafeFromString
 - 2021-08-21 - Multiple documents
 - 2021-07-07 - Feature : Save to file (and load file)
 - 2021-07-05 - Make SheetStore a generic store. Maybe by moving some more logic into ZipList ? (Like renameSheet and removeSheet)

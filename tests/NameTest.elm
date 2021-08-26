@@ -1,10 +1,27 @@
 module NameTest exposing (..)
 
 import Expect
+import Fuzz
 import Helpers exposing (testCollection)
 import Name
 import PositiveInt
 import Test exposing (..)
+
+
+expectToMatchString : String -> Name.Name -> Expect.Expectation
+expectToMatchString string =
+    Name.toString
+        >> Name.fromString
+        >> Maybe.map Name.toString
+        >> Expect.equal (Just string)
+
+
+expectValidName : Name.Name -> Expect.Expectation
+expectValidName =
+    Name.toString
+        >> Name.fromString
+        >> Maybe.map Name.toString
+        >> Expect.notEqual Nothing
 
 
 suite : Test
@@ -26,16 +43,15 @@ suite =
             ]
         , test "appendInt produces a valid name" <|
             \_ ->
-                Name.appendInt (Name.unsafeFromString "name") 24525
-                    |> Name.toString
-                    |> Name.fromString
-                    |> Maybe.map Name.toString
-                    |> Expect.equal (Just "name24525")
+                Name.appendInt (Name.sanitize "name") 24525
+                    |> expectToMatchString "name24525"
         , test "fromCoord produces a valid name" <|
             \_ ->
                 Name.fromCoord PositiveInt.one PositiveInt.one
-                    |> Name.toString
-                    |> Name.fromString
-                    |> Maybe.map Name.toString
-                    |> Expect.equal (Just "A1")
+                    |> expectToMatchString "A1"
+        , fuzz Fuzz.string "sanitize always produces valid names" (Name.sanitize >> expectValidName)
+        , test "sanitize with a valid string returns a name that matches it" <|
+            \_ ->
+                Name.sanitize "aValidString"
+                    |> expectToMatchString "aValidString"
         ]
