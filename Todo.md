@@ -20,7 +20,6 @@ Table ranges :
 Todo
 ====
 
-- Document name == filename
 - Multi-tab/window support
 - Enabler : Remove dependency to elm-sortable-table (implement my own)
     - Benefits : to store current state in local storage
@@ -37,6 +36,8 @@ Todo
 - Feature : More operators (* , ^, /, unary +, ++ on strings) and parenthesis 
 - Bug : accept non-ascii letter in names.
 - Feature : Support large sheets (#row and col > 1_000_000)
+- Feature : Let the user close all documents
+- Feature : better Name.sanitize (or different rules for document than for sheets ? Accepts dots, spaces...)
 - Feature : Re-order sheets
 - Feature : Support floating precision numbers
 - Feature : automatically update a pivot table when its source change (dat and fields)
@@ -53,6 +54,7 @@ Doing
 Done
 ====
 
+- 2021-08-29 - Document name == filename
 - 2021-08-26 - Name.sanitize instead of unsafeFromString
 - 2021-08-21 - Multiple documents
 - 2021-07-07 - Feature : Save to file (and load file)

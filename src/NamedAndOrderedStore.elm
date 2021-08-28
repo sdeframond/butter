@@ -144,7 +144,11 @@ insert : Name -> a -> NamedAndOrderedStore a -> NamedAndOrderedStore a
 insert name item (Store model) =
     let
         finalName =
-            nameHelp name 1
+            if Name.member name model.nameIndex then
+                nameHelp name 1
+
+            else
+                name
 
         nameHelp name_ i =
             let

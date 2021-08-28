@@ -6,6 +6,7 @@ module Document exposing
     , fromBytes
     , init
     , subscriptions
+    , toBytes
     , update
     , view
     )
@@ -102,7 +103,6 @@ type Msg
     | RemoveSheet Types.SheetId
     | EditSheet
     | UpdateSheetName String
-    | DownloadDocument
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -136,12 +136,6 @@ update msg model =
         UpdateSheetName input ->
             ( NamedAndOrderedStore.updateEdit input model
             , Cmd.none
-            )
-
-        DownloadDocument ->
-            ( model
-            , toBytes model
-                |> File.Download.bytes "document.butter" "application/butter"
             )
 
 
@@ -190,9 +184,6 @@ view model =
                 ]
             ]
             [ sheetSelector model
-            , Ui.row []
-                [ Ui.button [ Events.onClick DownloadDocument ] [ text "Download" ]
-                ]
             ]
         ]
 

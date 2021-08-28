@@ -6,6 +6,7 @@ import Css
 import Css.Global as Global
 import Document
 import File exposing (File)
+import File.Download
 import File.Select
 import Html.Styled as Html exposing (Html)
 import Html.Styled.Attributes exposing (css)
@@ -82,7 +83,8 @@ type Msg
     | AddDocument
     | OpenDocument
     | DocumentLoaded File
-    | DocumentsBytesLoaded Bytes
+    | DocumentsBytesLoaded String Bytes
+    | DownloadDocument
 
 
 updateAndSetStorage : Msg -> Model -> ( Model, Cmd Msg )
@@ -137,15 +139,37 @@ update msg model =
             )
 
         DocumentLoaded file ->
+            let
+                fileName =
+                    File.name file
+
+                docName =
+                    fileName |> String.split "." |> List.head |> Maybe.withDefault fileName
+            in
             ( model
-            , Task.perform DocumentsBytesLoaded (File.toBytes file)
+            , Task.perform (DocumentsBytesLoaded docName) (File.toBytes file)
             )
 
-        DocumentsBytesLoaded bytes ->
+        DocumentsBytesLoaded nameStr bytes ->
+            let
+                _ =
+                    Debug.log "nameStr" nameStr
+            in
             ( Document.fromBytes bytes
-                |> Maybe.map (\doc -> Store.insert defaultDocumentName doc model)
+                |> Maybe.map (\doc -> Store.insert (Name.sanitize nameStr) doc model)
                 |> Maybe.withDefault model
             , Cmd.none
+            )
+
+        DownloadDocument ->
+            let
+                docName =
+                    Store.currentName model
+            in
+            ( model
+            , Store.current model
+                |> Document.toBytes
+                |> File.Download.bytes (Name.toString docName ++ ".butter") "application/butter"
             )
 
 
@@ -203,11 +227,13 @@ viewBody model =
         [ Ui.column
             [ css
                 [ Css.minWidth (Css.px 200)
+                , Css.overflow Css.hidden
                 ]
             ]
             (Ui.row [ css [ Css.justifyContent Css.spaceBetween ] ]
                 [ Ui.button [ onClick AddDocument ] [ Html.text "New" ]
                 , Ui.button [ onClick OpenDocument ] [ Html.text "Upload..." ]
+                , Ui.button [ onClick DownloadDocument ] [ Html.text "Download" ]
                 ]
                 :: (Store.toItemList model
                         |> List.map docItem
