@@ -55,6 +55,7 @@ Doing
 Done
 ====
 
+- 2021-08-29 - Feature : PWA
 - 2021-08-29 - Feature : Multi-tab/window support
 - 2021-08-29 - Document name == filename
 - 2021-08-26 - Name.sanitize instead of unsafeFromString

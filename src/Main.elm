@@ -160,10 +160,6 @@ update msg model =
             )
 
         DocumentsBytesLoaded nameStr bytes ->
-            let
-                _ =
-                    Debug.log "nameStr" nameStr
-            in
             ( Document.fromBytes bytes
                 |> Maybe.map (\doc -> Store.insert (Name.sanitize nameStr) doc model)
                 |> Maybe.withDefault model

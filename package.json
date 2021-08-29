@@ -3,7 +3,8 @@
   "name": "butter",
   "scripts": {
     "postinstall": "npx elm-tooling install",
-    "start": "npx elm-live src/Main.elm -- --output=build/elm.js",
+    "start": "npx elm-live src/Main.elm -- --output=build/main.js",
+    "serve": "deno run --allow-read=. --allow-net=localhost https://deno.land/std/http/file_server.ts --host=localhost",
     "test": "npx elm-test-rs",
     "test-watch": "npx elm-test-rs --watch --fuzz 10"
   },
