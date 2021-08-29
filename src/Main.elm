@@ -67,6 +67,9 @@ init flags =
 port setStorage : Encode.Value -> Cmd msg
 
 
+port updateState : (Encode.Value -> msg) -> Sub msg
+
+
 port logError : String -> Cmd msg
 
 
@@ -85,6 +88,7 @@ type Msg
     | DocumentLoaded File
     | DocumentsBytesLoaded String Bytes
     | DownloadDocument
+    | SetState Model
 
 
 updateAndSetStorage : Msg -> Model -> ( Model, Cmd Msg )
@@ -94,7 +98,12 @@ updateAndSetStorage msg model =
             update msg model
     in
     ( newModel
-    , Cmd.batch [ setStorage (encode newModel), cmds ]
+    , case msg of
+        SetState _ ->
+            cmds
+
+        _ ->
+            Cmd.batch [ setStorage (encode newModel), cmds ]
     )
 
 
@@ -172,6 +181,9 @@ update msg model =
                 |> File.Download.bytes (Name.toString docName ++ ".butter") "application/butter"
             )
 
+        SetState newModel ->
+            ( newModel, Cmd.none )
+
 
 
 -- SUBSCRIPTIONS
@@ -179,9 +191,12 @@ update msg model =
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
-    Store.current model
-        |> Document.subscriptions
-        |> Sub.map DocumentMsg
+    Sub.batch
+        [ Store.current model
+            |> Document.subscriptions
+            |> Sub.map DocumentMsg
+        , updateState (Decode.decodeValue decoder >> Result.withDefault model >> SetState)
+        ]
 
 
 

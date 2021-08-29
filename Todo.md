@@ -20,7 +20,8 @@ Table ranges :
 Todo
 ====
 
-- Multi-tab/window support
+- Feature : concurrent edit on several tabs/windows
+- Feature : Undo/redo
 - Enabler : Remove dependency to elm-sortable-table (implement my own)
     - Benefits : to store current state in local storage
     - Benefit : to facilitate having a consistent look across sheet types
@@ -54,6 +55,7 @@ Doing
 Done
 ====
 
+- 2021-08-29 - Feature : Multi-tab/window support
 - 2021-08-29 - Document name == filename
 - 2021-08-26 - Name.sanitize instead of unsafeFromString
 - 2021-08-21 - Multiple documents
