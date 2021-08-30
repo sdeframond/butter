@@ -114,10 +114,9 @@ suite =
             \doc ->
                 let
                     commited =
-                        Document.update (Document.SelectSheet PositiveInt.one) doc
-                            |> Tuple.first
+                        Document.cancelEdits doc
                 in
-                Document.encode commited
+                Document.encode doc
                     |> Decode.decodeValue Document.decoder
                     |> Expect.equal (Ok commited)
         , fuzz (tuple3 ( nameFuzzer, documentFuzzer, sheetMsgFuzzer ))

@@ -1,6 +1,7 @@
 module NamedAndOrderedStore exposing
     ( Id
     , NamedAndOrderedStore
+    , cancelEdition
     , commitName
     , current
     , currentId
@@ -253,6 +254,11 @@ commitName ((Store data) as model) =
             model
 
 
+cancelEdition : NamedAndOrderedStore a -> NamedAndOrderedStore a
+cancelEdition (Store data) =
+    Store { data | edit = Nothing }
+
+
 mapCurrent : (a -> a) -> NamedAndOrderedStore a -> NamedAndOrderedStore a
 mapCurrent fn ((Store data) as model) =
     let
@@ -332,8 +338,8 @@ decoder makeValueDecoder =
             Name.get name ids
 
         finalize nameIndex =
-            Decode.map3 (Data nameIndex)
-                (Decode.field jsonKeys.edit editStatusDecoder)
+            Decode.map2 (Data nameIndex Nothing)
+                -- (Decode.field jsonKeys.edit editStatusDecoder)
                 (getId nameIndex
                     |> makeValueDecoder
                     |> itemDecoder
@@ -374,8 +380,8 @@ encode makeValueEncoder ((Store data) as store) =
             getNameById store id
     in
     Encode.object
-        [ ( jsonKeys.edit, encodeEditStatus data.edit )
-        , ( jsonKeys.nextId, Id.encode data.nextId )
+        -- [ ( jsonKeys.edit, encodeEditStatus data.edit )
+        [ ( jsonKeys.nextId, Id.encode data.nextId )
         , ( jsonKeys.nameIndex, Name.encodeStore Id.encode data.nameIndex )
         , ( jsonKeys.items, ZL.encode (encodeItem (makeValueEncoder getName)) data.items )
         ]

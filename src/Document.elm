@@ -1,6 +1,7 @@
 module Document exposing
     ( Model
     , Msg(..)
+    , cancelEdits
     , decoder
     , encode
     , fromBytes
@@ -81,6 +82,11 @@ fromBytes bytes =
             )
 
 
+cancelEdits : Model -> Model
+cancelEdits doc =
+    NamedAndOrderedStore.cancelEdition doc
+
+
 
 -- SUSCRIPTIONS
 
@@ -119,7 +125,10 @@ update msg model =
             )
 
         SelectSheet sheetId ->
-            ( NamedAndOrderedStore.selectById Sheet.commitEdit sheetId model |> Maybe.withDefault model
+            ( model
+                |> NamedAndOrderedStore.commitName
+                |> NamedAndOrderedStore.selectById Sheet.commitEdit sheetId
+                |> Maybe.withDefault model
             , Cmd.none
             )
 

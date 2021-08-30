@@ -34,7 +34,7 @@ main =
 
 
 
--- INIT
+-- MODEL
 
 
 type alias Store a =
@@ -43,6 +43,10 @@ type alias Store a =
 
 type alias Model =
     Store Document.Model
+
+
+
+-- INIT
 
 
 defaultDocumentName : Name
