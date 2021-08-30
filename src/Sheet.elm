@@ -14,6 +14,7 @@ module Sheet exposing
     , initGrid
     , initPivotTable
     , initTable
+    , merge
     , subscriptions
     , update
     , view
@@ -92,6 +93,22 @@ subscriptions sheet =
 
         _ ->
             Sub.none
+
+
+merge : Sheet -> Sheet -> Sheet
+merge inSheet currentSheet =
+    case ( inSheet, currentSheet ) of
+        ( GridSheet inGrid, GridSheet currentGrid ) ->
+            GridSheet (Grid.merge inGrid currentGrid)
+
+        ( TableSheet inTable, TableSheet currentTable ) ->
+            TableSheet (Table.merge inTable currentTable)
+
+        ( PivotTableSheet inPivotTable, PivotTableSheet _ ) ->
+            PivotTableSheet inPivotTable
+
+        ( sheet, _ ) ->
+            sheet
 
 
 type Msg

@@ -8,6 +8,7 @@ module Grid exposing
     , encode
     , evalCell
     , init
+    , merge
     , update
     , view
     )
@@ -66,6 +67,11 @@ type alias Context =
 init : Grid
 init =
     Grid { editState = Nothing, cells = Name.empty }
+
+
+merge : Grid -> Grid -> Grid
+merge (Grid inData) (Grid currentData) =
+    Grid { inData | editState = currentData.editState }
 
 
 

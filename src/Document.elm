@@ -6,6 +6,7 @@ module Document exposing
     , encode
     , fromBytes
     , init
+    , merge
     , subscriptions
     , toBytes
     , update
@@ -85,6 +86,11 @@ fromBytes bytes =
 cancelEdits : Model -> Model
 cancelEdits doc =
     NamedAndOrderedStore.cancelEdition doc
+
+
+merge : Model -> Model -> Model
+merge =
+    NamedAndOrderedStore.merge Sheet.merge
 
 
 

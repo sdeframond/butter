@@ -17,6 +17,7 @@ module NamedAndOrderedStore exposing
     , insert
     , isCurrentId
     , isEditing
+    , merge
     , remove
     , rename
     , selectById
@@ -105,6 +106,23 @@ currentName store =
 toItemList : NamedAndOrderedStore a -> List (Item a)
 toItemList (Store { items }) =
     items |> ZL.toList
+
+
+merge : (a -> a -> a) -> NamedAndOrderedStore a -> NamedAndOrderedStore a -> NamedAndOrderedStore a
+merge mergeValue (Store inData) ((Store currentData) as currentStore) =
+    let
+        mergeSubItems (Store data) =
+            Store { data | items = ZL.map mergeItem data.items }
+
+        mergeItem item =
+            getById item.id currentStore
+                |> Maybe.map (\value -> { item | value = mergeValue item.value value })
+                |> Maybe.withDefault item
+    in
+    Store { inData | edit = currentData.edit }
+        |> selectById identity (currentId currentStore)
+        |> Maybe.withDefault (Store { inData | edit = Nothing })
+        |> mergeSubItems
 
 
 isCurrentId : Id -> NamedAndOrderedStore a -> Bool

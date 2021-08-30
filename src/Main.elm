@@ -182,7 +182,7 @@ update msg model =
             )
 
         SetState newModel ->
-            ( newModel, Cmd.none )
+            ( Store.merge Document.merge newModel model, Cmd.none )
 
 
 
