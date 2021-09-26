@@ -26,7 +26,6 @@ module NamedAndOrderedStore exposing
     , updateEdit
     )
 
-import DecodeHelpers
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Name exposing (Name)
@@ -357,7 +356,6 @@ decoder makeValueDecoder =
 
         finalize nameIndex =
             Decode.map2 (Data nameIndex Nothing)
-                -- (Decode.field jsonKeys.edit editStatusDecoder)
                 (getId nameIndex
                     |> makeValueDecoder
                     |> itemDecoder
@@ -369,18 +367,6 @@ decoder makeValueDecoder =
     Decode.field jsonKeys.nameIndex (Name.storeDecoder Id.decoder)
         |> Decode.andThen finalize
         |> Decode.map Store
-
-
-editStatusDecoder : Decode.Decoder (Maybe String)
-editStatusDecoder =
-    Decode.field jsonKeys.statusType Decode.string
-        |> DecodeHelpers.switch "Invalid status type"
-            [ ( jsonKeys.statusNotEditing, Decode.succeed Nothing )
-            , ( jsonKeys.statusEditingSheetName
-              , Decode.map Just
-                    (Decode.field jsonKeys.statusInput Decode.string)
-              )
-            ]
 
 
 itemDecoder : Decode.Decoder a -> Decode.Decoder (Item a)
@@ -398,25 +384,10 @@ encode makeValueEncoder ((Store data) as store) =
             getNameById store id
     in
     Encode.object
-        -- [ ( jsonKeys.edit, encodeEditStatus data.edit )
         [ ( jsonKeys.nextId, Id.encode data.nextId )
         , ( jsonKeys.nameIndex, Name.encodeStore Id.encode data.nameIndex )
         , ( jsonKeys.items, ZL.encode (encodeItem (makeValueEncoder getName)) data.items )
         ]
-
-
-encodeEditStatus : Maybe String -> Encode.Value
-encodeEditStatus status =
-    case status of
-        Nothing ->
-            Encode.object
-                [ ( jsonKeys.statusType, Encode.string jsonKeys.statusNotEditing ) ]
-
-        Just input ->
-            Encode.object
-                [ ( jsonKeys.statusType, Encode.string jsonKeys.statusEditingSheetName )
-                , ( jsonKeys.statusInput, Encode.string input )
-                ]
 
 
 encodeItem : (a -> Encode.Value) -> Item a -> Encode.Value
