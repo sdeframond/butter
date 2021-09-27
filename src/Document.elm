@@ -3,13 +3,25 @@ module Document exposing
     , Msg(..)
     , cancelEdits
     , decoder
+    , editCurrentSheetName
     , encode
     , fromBytes
+    , getCurrentSheet
+    , getCurrentSheetEditStatus
+    , getCurrentSheetId
+    , getCurrentSheetName
+    , getSheetNameById
+    , getSheets
     , init
+    , insertSheet
     , merge
+    , removeSheet
+    , selectSheet
     , subscriptions
     , toBytes
     , update
+    , updateCurrentSheet
+    , updateEditedSheetName
     , view
     )
 
@@ -24,6 +36,7 @@ import Json.Decode
 import Json.Encode
 import Name exposing (Name)
 import NamedAndOrderedStore exposing (NamedAndOrderedStore)
+import PositiveInt
 import Sheet exposing (Sheet)
 import Time
 import Types
@@ -36,8 +49,13 @@ import Zip.Entry as Entry
 -- DOCUMENT
 
 
-type alias Model =
-    NamedAndOrderedStore Sheet
+type Model
+    = Model ModelData
+
+
+type alias ModelData =
+    { store : NamedAndOrderedStore Sheet
+    }
 
 
 defaultSheetName : Name
@@ -47,8 +65,11 @@ defaultSheetName =
 
 init : Model
 init =
-    Sheet.initTable
-        |> NamedAndOrderedStore.init defaultSheetName
+    Model
+        { store =
+            Sheet.initTable
+                |> NamedAndOrderedStore.init defaultSheetName
+        }
 
 
 toBytes : Model -> Bytes
@@ -84,13 +105,105 @@ fromBytes bytes =
 
 
 cancelEdits : Model -> Model
-cancelEdits doc =
-    NamedAndOrderedStore.cancelEdition doc
+cancelEdits (Model data) =
+    Model
+        { data
+            | store = NamedAndOrderedStore.cancelEdition data.store
+        }
 
 
 merge : Model -> Model -> Model
-merge =
-    NamedAndOrderedStore.merge Sheet.merge
+merge (Model inData) (Model currentData) =
+    Model
+        { inData
+            | store = NamedAndOrderedStore.merge Sheet.merge inData.store currentData.store
+        }
+
+
+getCurrentSheet : Model -> Sheet
+getCurrentSheet (Model { store }) =
+    NamedAndOrderedStore.current store
+
+
+updateCurrentSheet : Sheet.Msg -> Model -> ( Model, Cmd Sheet.Msg )
+updateCurrentSheet msg ((Model data) as model) =
+    let
+        setCurrent sheet =
+            Model
+                { data
+                    | store =
+                        sheet
+                            |> NamedAndOrderedStore.setCurrent data.store
+                            |> NamedAndOrderedStore.commitName
+                }
+    in
+    Sheet.update (NamedAndOrderedStore.getIdByName data.store) msg (getCurrentSheet model)
+        |> Tuple.mapFirst setCurrent
+
+
+insertSheet : Sheet.Params -> Model -> Model
+insertSheet params (Model data) =
+    Model
+        { data
+            | store = NamedAndOrderedStore.insert defaultSheetName (Sheet.fromParams params) data.store
+        }
+
+
+selectSheet : Types.SheetId -> Model -> Maybe Model
+selectSheet sheetId (Model data) =
+    data.store
+        |> NamedAndOrderedStore.commitName
+        |> NamedAndOrderedStore.selectById Sheet.commitEdit sheetId
+        |> Maybe.map (\store -> Model { data | store = store })
+
+
+removeSheet : Types.SheetId -> Model -> Model
+removeSheet sheetId (Model data) =
+    Model
+        { data
+            | store = NamedAndOrderedStore.remove sheetId data.store
+        }
+
+
+editCurrentSheetName : Model -> Model
+editCurrentSheetName (Model data) =
+    Model
+        { data
+            | store = NamedAndOrderedStore.editCurrentName Sheet.commitEdit data.store
+        }
+
+
+updateEditedSheetName : String -> Model -> Model
+updateEditedSheetName input (Model data) =
+    Model
+        { data
+            | store = NamedAndOrderedStore.updateEdit input data.store
+        }
+
+
+getCurrentSheetId : Model -> Types.SheetId
+getCurrentSheetId (Model data) =
+    NamedAndOrderedStore.currentId data.store
+
+
+getCurrentSheetName : Model -> Name
+getCurrentSheetName (Model data) =
+    NamedAndOrderedStore.currentName data.store
+
+
+getSheetNameById : Types.SheetId -> Model -> Maybe Name
+getSheetNameById id (Model data) =
+    NamedAndOrderedStore.getNameById data.store id
+
+
+getCurrentSheetEditStatus : Model -> Maybe String
+getCurrentSheetEditStatus (Model data) =
+    NamedAndOrderedStore.editStatus data.store
+
+
+getSheets : Model -> List { id : Types.SheetId, name : Name, value : Sheet }
+getSheets (Model data) =
+    NamedAndOrderedStore.toItemList data.store
 
 
 
@@ -99,7 +212,7 @@ merge =
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
-    NamedAndOrderedStore.current model
+    getCurrentSheet model
         |> Sheet.subscriptions
         |> Sub.map SheetMsg
 
@@ -113,45 +226,36 @@ type Msg
     | InsertSheet Sheet.Params
     | SelectSheet Types.SheetId
     | RemoveSheet Types.SheetId
-    | EditSheet
-    | UpdateSheetName String
+    | EditCurrentSheetName
+    | UpdateEditedSheetName String
 
 
-update : Msg -> Model -> ( Model, Cmd Msg )
-update msg model =
+update : (String -> Cmd Msg) -> Msg -> Model -> ( Model, Cmd Msg )
+update logError msg model =
     case msg of
         SheetMsg sheetMsg ->
-            Sheet.update (NamedAndOrderedStore.getIdByName model) sheetMsg (NamedAndOrderedStore.current model)
-                |> Tuple.mapFirst (NamedAndOrderedStore.setCurrent model >> NamedAndOrderedStore.commitName)
+            updateCurrentSheet sheetMsg model
                 |> Tuple.mapSecond (Cmd.map SheetMsg)
 
         InsertSheet params ->
-            ( NamedAndOrderedStore.insert defaultSheetName (Sheet.fromParams params) model
-            , Cmd.none
-            )
+            ( insertSheet params model, Cmd.none )
 
         SelectSheet sheetId ->
-            ( model
-                |> NamedAndOrderedStore.commitName
-                |> NamedAndOrderedStore.selectById Sheet.commitEdit sheetId
-                |> Maybe.withDefault model
-            , Cmd.none
-            )
+            case selectSheet sheetId model of
+                Just newModel ->
+                    ( newModel, Cmd.none )
+
+                Nothing ->
+                    ( model, logError <| "Could not find sheet with ID = " ++ PositiveInt.toString sheetId )
 
         RemoveSheet sheetId ->
-            ( NamedAndOrderedStore.remove sheetId model
-            , Cmd.none
-            )
+            ( removeSheet sheetId model, Cmd.none )
 
-        EditSheet ->
-            ( NamedAndOrderedStore.editCurrentName Sheet.commitEdit model
-            , Cmd.none
-            )
+        EditCurrentSheetName ->
+            ( editCurrentSheetName model, Cmd.none )
 
-        UpdateSheetName input ->
-            ( NamedAndOrderedStore.updateEdit input model
-            , Cmd.none
-            )
+        UpdateEditedSheetName input ->
+            ( updateEditedSheetName input model, Cmd.none )
 
 
 
@@ -159,7 +263,7 @@ update msg model =
 
 
 eval : Model -> Types.LocatedName -> List Types.LocatedName -> Types.ValueOrError
-eval model ( sheetId, ref ) ancestors =
+eval ((Model data) as model) ( sheetId, ref ) ancestors =
     let
         context : Sheet.Context
         context =
@@ -168,7 +272,7 @@ eval model ( sheetId, ref ) ancestors =
             , resolveGlobalReference = eval model
             }
     in
-    NamedAndOrderedStore.getById sheetId model
+    NamedAndOrderedStore.getById sheetId data.store
         |> Result.fromMaybe
             -- Is it realy unexpected though ? Eg what happens when some sheet is removed ?
             (Types.UnexpectedError "Found an orphan sheet")
@@ -212,9 +316,9 @@ viewCurrentSheet model =
             , insertPivotTable =
                 Sheet.allParams.pivotTable
                     >> InsertSheet
-            , getSheetName = NamedAndOrderedStore.getNameById model
+            , getSheetName = \id -> getSheetNameById id model
             , context =
-                { prefix = NamedAndOrderedStore.currentId model
+                { prefix = getCurrentSheetId model
                 , ancestors = []
                 , resolveGlobalReference = eval model
                 }
@@ -227,7 +331,7 @@ viewCurrentSheet model =
             , overflow hidden
             ]
         ]
-        [ Sheet.view sheetConfig (NamedAndOrderedStore.current model)
+        [ Sheet.view sheetConfig (getCurrentSheet model)
         ]
 
 
@@ -237,14 +341,14 @@ sheetSelector model =
         sheetItem item =
             Ui.editableListItem
                 { onSelect = SelectSheet
-                , onEdit = EditSheet
+                , onEdit = EditCurrentSheetName
                 , onRemove = RemoveSheet
-                , onUpdate = UpdateSheetName
+                , onUpdate = UpdateEditedSheetName
                 }
                 { id = item.id
                 , name = Name.toString item.name
-                , isCurrent = NamedAndOrderedStore.isCurrentId item.id model
-                , editStatus = NamedAndOrderedStore.editStatus model
+                , isCurrent = getCurrentSheetId model == item.id
+                , editStatus = getCurrentSheetEditStatus model
                 }
 
         addSheet msg label =
@@ -256,15 +360,25 @@ sheetSelector model =
     Ui.row []
         (addSheet (InsertSheet Sheet.allParams.table) "+table"
             :: addSheet (InsertSheet Sheet.allParams.grid) "+grid"
-            :: (NamedAndOrderedStore.toItemList model |> List.map sheetItem)
+            :: (getSheets model |> List.map sheetItem)
         )
+
+
+jsonKeys : { store : String }
+jsonKeys =
+    { store = "store"
+    }
 
 
 decoder : Json.Decode.Decoder Model
 decoder =
-    NamedAndOrderedStore.decoder Sheet.decoder
+    Json.Decode.map ModelData
+        (Json.Decode.field jsonKeys.store (NamedAndOrderedStore.decoder Sheet.decoder))
+        |> Json.Decode.map Model
 
 
 encode : Model -> Json.Encode.Value
-encode =
-    NamedAndOrderedStore.encode Sheet.encode
+encode (Model data) =
+    Json.Encode.object
+        [ ( jsonKeys.store, NamedAndOrderedStore.encode Sheet.encode data.store )
+        ]

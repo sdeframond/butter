@@ -115,8 +115,12 @@ update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         DocumentMsg docMsg ->
+            let
+                logDocumentError str =
+                    (Store.currentName model |> Name.toString) ++ ": " ++ str |> logError
+            in
             Store.current model
-                |> Document.update docMsg
+                |> Document.update logDocumentError docMsg
                 |> Tuple.mapFirst (Store.setCurrent model)
                 |> Tuple.mapSecond (Cmd.map DocumentMsg)
 
