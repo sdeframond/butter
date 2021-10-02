@@ -9,6 +9,7 @@ module Types exposing
     , dataTypeDecoder
     , encodeDataType
     , encodeTable
+    , errorToString
     , tableDecoder
     , valueOrErrorToString
     , valueToString
@@ -32,6 +33,11 @@ type Error
     | InvalidSheetNameError
     | DuplicateSheetNameError Name
     | UnexpectedError String
+
+
+errorToString : Error -> String
+errorToString error =
+    error |> encodeError |> Encode.encode 0
 
 
 errorDecoder : Decode.Decoder Error

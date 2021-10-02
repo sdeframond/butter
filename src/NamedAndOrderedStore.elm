@@ -2,7 +2,6 @@ module NamedAndOrderedStore exposing
     ( Id
     , NamedAndOrderedStore
     , cancelEdition
-    , commitName
     , current
     , currentId
     , currentName
@@ -16,12 +15,11 @@ module NamedAndOrderedStore exposing
     , init
     , insert
     , isCurrentId
-    , isEditing
     , merge
     , remove
-    , rename
     , selectById
     , setCurrent
+    , setName
     , toItemList
     , updateEdit
     )
@@ -70,16 +68,6 @@ init initName item =
         , nextId = Id.next initId
         , edit = Nothing
         }
-
-
-isEditing : NamedAndOrderedStore a -> Bool
-isEditing (Store { edit }) =
-    case edit of
-        Just _ ->
-            True
-
-        Nothing ->
-            False
 
 
 currentItem : NamedAndOrderedStore a -> Item a
@@ -133,7 +121,9 @@ selectById : (a -> a) -> Id -> NamedAndOrderedStore a -> Maybe (NamedAndOrderedS
 selectById onBlur selectedId store =
     let
         (Store model) =
-            store |> mapCurrent onBlur |> commitName
+            store |> mapCurrent onBlur
+
+        --|> commitName
     in
     ZL.select (.id >> (==) selectedId) model.items
         |> Maybe.map (\items -> { model | items = items })
@@ -206,8 +196,8 @@ remove id (Store data) =
         |> Store
 
 
-rename : Id -> String -> NamedAndOrderedStore a -> Result Types.Error (NamedAndOrderedStore a)
-rename id input ((Store data) as model) =
+setName : Id -> Name -> NamedAndOrderedStore a -> Result Types.Error (NamedAndOrderedStore a)
+setName id name ((Store data) as model) =
     let
         updateSheetName : ( Name, Name ) -> Data a -> NamedAndOrderedStore a
         updateSheetName ( newName, oldName ) m =
@@ -231,24 +221,19 @@ rename id input ((Store data) as model) =
                             |> Name.remove oldName
                             |> Name.insert newName id
                 }
-
-        doRename name =
-            if Name.member name data.nameIndex then
-                Err (Types.DuplicateSheetNameError name)
-
-            else
-                getNameById model id
-                    |> Maybe.map (Tuple.pair name)
-                    |> Result.fromMaybe
-                        (Types.UnexpectedError
-                            ("Invalid SheetId: " ++ Id.toString id)
-                        )
-                    |> Result.map updateSheetName
-                    |> Result.map (\updater -> updater data)
     in
-    Name.fromString input
-        |> Result.fromMaybe Types.InvalidSheetNameError
-        |> Result.andThen doRename
+    if Name.member name data.nameIndex then
+        Err (Types.DuplicateSheetNameError name)
+
+    else
+        getNameById model id
+            |> Maybe.map (Tuple.pair name)
+            |> Result.fromMaybe
+                (Types.UnexpectedError
+                    ("Invalid SheetId: " ++ Id.toString id)
+                )
+            |> Result.map updateSheetName
+            |> Result.map (\updater -> updater data)
 
 
 setCurrent : NamedAndOrderedStore a -> a -> NamedAndOrderedStore a
@@ -257,18 +242,6 @@ setCurrent ((Store data) as model) newSheet =
         | items = ZL.setCurrent { id = currentId model, name = currentName model, value = newSheet } data.items
     }
         |> Store
-
-
-commitName : NamedAndOrderedStore a -> NamedAndOrderedStore a
-commitName ((Store data) as model) =
-    case data.edit of
-        Just input ->
-            rename (currentId model) input model
-                |> Result.withDefault model
-                |> (\(Store renamed) -> Store { renamed | edit = Nothing })
-
-        Nothing ->
-            model
 
 
 cancelEdition : NamedAndOrderedStore a -> NamedAndOrderedStore a
