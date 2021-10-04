@@ -1,13 +1,10 @@
 module NamedAndOrderedStore exposing
     ( Id
     , NamedAndOrderedStore
-    , cancelEdition
     , current
     , currentId
     , currentName
     , decoder
-    , editCurrentName
-    , editStatus
     , encode
     , getById
     , getIdByName
@@ -21,7 +18,6 @@ module NamedAndOrderedStore exposing
     , setCurrent
     , setName
     , toItemList
-    , updateEdit
     )
 
 import Json.Decode as Decode
@@ -38,7 +34,6 @@ type NamedAndOrderedStore a
 
 type alias Data a =
     { nameIndex : Name.Store PositiveInt
-    , edit : Maybe String
     , items : ZipList (Item a)
     , nextId : PositiveInt
     }
@@ -66,7 +61,6 @@ init initName item =
         { items = ZL.singleton { id = initId, name = initName, value = item }
         , nameIndex = Name.fromList [ ( initName, initId ) ]
         , nextId = Id.next initId
-        , edit = Nothing
         }
 
 
@@ -96,7 +90,7 @@ toItemList (Store { items }) =
 
 
 merge : (a -> a -> a) -> NamedAndOrderedStore a -> NamedAndOrderedStore a -> NamedAndOrderedStore a
-merge mergeValue (Store inData) ((Store currentData) as currentStore) =
+merge mergeValue inStore currentStore =
     let
         mergeSubItems (Store data) =
             Store { data | items = ZL.map mergeItem data.items }
@@ -106,9 +100,9 @@ merge mergeValue (Store inData) ((Store currentData) as currentStore) =
                 |> Maybe.map (\value -> { item | value = mergeValue item.value value })
                 |> Maybe.withDefault item
     in
-    Store { inData | edit = currentData.edit }
+    inStore
         |> selectById identity (currentId currentStore)
-        |> Maybe.withDefault (Store { inData | edit = Nothing })
+        |> Maybe.withDefault inStore
         |> mergeSubItems
 
 
@@ -221,8 +215,13 @@ setName id name ((Store data) as model) =
                             |> Name.remove oldName
                             |> Name.insert newName id
                 }
+
+        isDuplicate =
+            Name.get name data.nameIndex
+                |> Maybe.map ((/=) id)
+                |> Maybe.withDefault False
     in
-    if Name.member name data.nameIndex then
+    if isDuplicate then
         Err (Types.DuplicateSheetNameError name)
 
     else
@@ -244,11 +243,6 @@ setCurrent ((Store data) as model) newSheet =
         |> Store
 
 
-cancelEdition : NamedAndOrderedStore a -> NamedAndOrderedStore a
-cancelEdition (Store data) =
-    Store { data | edit = Nothing }
-
-
 mapCurrent : (a -> a) -> NamedAndOrderedStore a -> NamedAndOrderedStore a
 mapCurrent fn ((Store data) as model) =
     let
@@ -262,29 +256,6 @@ mapCurrent fn ((Store data) as model) =
         |> mapValue
         |> setCurrentItem
         |> Store
-
-
-editCurrentName : (a -> a) -> NamedAndOrderedStore a -> NamedAndOrderedStore a
-editCurrentName afterEdit ((Store data) as model) =
-    { data | edit = Just (Name.toString <| currentName model) }
-        |> Store
-        |> mapCurrent afterEdit
-
-
-updateEdit : String -> NamedAndOrderedStore a -> NamedAndOrderedStore a
-updateEdit input (Store data) =
-    Store <|
-        case data.edit of
-            Just _ ->
-                { data | edit = Just input }
-
-            _ ->
-                data
-
-
-editStatus : NamedAndOrderedStore a -> Maybe String
-editStatus (Store { edit }) =
-    edit
 
 
 
@@ -328,7 +299,7 @@ decoder makeValueDecoder =
             Name.get name ids
 
         finalize nameIndex =
-            Decode.map2 (Data nameIndex Nothing)
+            Decode.map2 (Data nameIndex)
                 (getId nameIndex
                     |> makeValueDecoder
                     |> itemDecoder
