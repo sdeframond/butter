@@ -1,6 +1,7 @@
 port module Main exposing (main)
 
 import Browser
+import Browser.Events exposing (Visibility(..), onVisibilityChange)
 import Bytes exposing (Bytes)
 import Css
 import Css.Global as Global
@@ -96,6 +97,9 @@ port updateState : (Encode.Value -> msg) -> Sub msg
 port logError : String -> Cmd msg
 
 
+port blurs : (Encode.Value -> msg) -> Sub msg
+
+
 
 -- UPDATE
 
@@ -103,6 +107,7 @@ port logError : String -> Cmd msg
 type Msg
     = DocumentStoreMsg DocumentStoreMsg
     | KeyboardMsg Keyboard.Msg
+    | VisibilityChanged Visibility
 
 
 type DocumentStoreMsg
@@ -137,36 +142,92 @@ updateAndSetStorage msg model =
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
-    let
-        undo docs =
-            Store.current docs
-                |> Document.undo
-                |> Result.map (Store.setCurrent docs)
-    in
     case msg of
         DocumentStoreMsg storeMsg ->
             updateAndSetStorage storeMsg model
                 |> Tuple.mapSecond (Cmd.map DocumentStoreMsg)
 
         KeyboardMsg kbdMsg ->
-            let
-                ( pressedKeys, changed ) =
-                    Keyboard.updateWithKeyChange Keyboard.anyKeyOriginal kbdMsg model.pressedKeys
+            handleKeyboardMsg kbdMsg model
 
-                newModel =
-                    { model | pressedKeys = Keyboard.update kbdMsg model.pressedKeys }
-            in
-            case ( List.member Keyboard.Control pressedKeys, changed ) of
-                ( True, Just (Keyboard.KeyDown (Keyboard.Character "z")) ) ->
-                    case undo newModel.documents of
-                        Ok undone ->
-                            ( { newModel | documents = undone }, Cmd.none )
+        VisibilityChanged visibility ->
+            case visibility of
+                Hidden ->
+                    ( { model | pressedKeys = [] }, Cmd.none )
 
-                        Err error ->
-                            ( newModel, error |> Types.errorToString |> logError )
+                Visible ->
+                    ( model, Cmd.none )
+
+
+handleKeyboardMsg : Keyboard.Msg -> Model -> ( Model, Cmd msg )
+handleKeyboardMsg kbdMsg model =
+    let
+        mapDocs f docs =
+            Store.current docs
+                |> f
+                |> Result.map (Store.setCurrent docs)
+
+        logDocsError docResult =
+            case docResult of
+                Ok docs ->
+                    ( { newModel | documents = docs }, Cmd.none )
+
+                Err error ->
+                    ( newModel, error |> Types.errorToString |> logError )
+
+        ( pressedKeys, changed ) =
+            Keyboard.updateWithKeyChange Keyboard.anyKeyUpper kbdMsg model.pressedKeys
+
+        isPressed key =
+            List.member key pressedKeys
+
+        ( control, alt, shift ) =
+            ( isPressed Keyboard.Control
+            , isPressed Keyboard.Alt
+            , isPressed Keyboard.Shift
+            )
+
+        newModel =
+            { model | pressedKeys = Keyboard.update kbdMsg model.pressedKeys }
+
+        onlyKeyDown keyEvent =
+            case keyEvent of
+                Keyboard.KeyDown key ->
+                    Just key
+
+                Keyboard.KeyUp _ ->
+                    Nothing
+
+        default =
+            Ok newModel.documents
+
+        handleKey key =
+            case key of
+                Keyboard.Character "Z" ->
+                    if control && not alt && not shift then
+                        mapDocs Document.undo newModel.documents
+
+                    else if control && not alt && shift then
+                        mapDocs Document.redo newModel.documents
+
+                    else
+                        default
+
+                Keyboard.Character "Y" ->
+                    if control && not alt && not shift then
+                        mapDocs Document.redo newModel.documents
+
+                    else
+                        default
 
                 _ ->
-                    ( newModel, Cmd.none )
+                    default
+    in
+    changed
+        |> Maybe.andThen onlyKeyDown
+        |> Maybe.map handleKey
+        |> Maybe.withDefault default
+        |> logDocsError
 
 
 updateDocumentStore : DocumentStoreMsg -> Model -> ( Model, Cmd DocumentStoreMsg )
@@ -285,6 +346,8 @@ subscriptions model =
     Sub.batch
         [ storeSubscriptions model.documents |> Sub.map DocumentStoreMsg
         , Keyboard.subscriptions |> Sub.map KeyboardMsg
+        , onVisibilityChange VisibilityChanged
+        , blurs (always <| VisibilityChanged Hidden)
         ]
 
 

@@ -15,6 +15,7 @@ module Document exposing
     , init
     , insertSheet
     , merge
+    , redo
     , removeSheet
     , selectSheet
     , subscriptions
@@ -119,6 +120,21 @@ undo (Model data) =
                     , redo = action :: data.redo
                 }
                 |> unApplyAction action
+
+        _ ->
+            Model data |> Result.Ok
+
+
+redo : Model -> Result Types.Error Model
+redo (Model data) =
+    case data.redo of
+        action :: next ->
+            Model
+                { data
+                    | undo = action :: data.undo
+                    , redo = next
+                }
+                |> applyAction action
 
         _ ->
             Model data |> Result.Ok
