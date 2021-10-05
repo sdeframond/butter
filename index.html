@@ -1,0 +1,61 @@
+<!DOCTYPE HTML>
+<html>
+
+<head>
+	<style>
+		body {
+			padding: 0;
+			margin: 0;
+		}
+	</style>
+
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<meta name="description" content="The Butter spreadsheet editor" />
+	<meta name="theme-color" content="#008000" />
+	<meta http-equiv="X-UA-Compatible" content="ie=edge" />
+
+	<link rel="manifest" href="manifest.json" />
+	<link rel="icon" href="favicon.ico" type="image/x-icon" />
+	<link rel="shortcut icon" href="favicon.ico" type="image/x-icon" />
+	<link rel="apple-touch-icon" href="favicon.ico" />
+	<script type="text/javascript" src="build/main.js"></script>
+	<title>Butter</title>
+
+</head>
+
+<body>
+
+	<pre id="elm"></pre>
+
+	<script type="text/javascript">
+		// navigator.serviceWorker.register('./serviceWorker.js', { scope: './' });
+		const channel = new BroadcastChannel('broadcast');
+		// Extract the stored data from previous sessions.
+		var storedData = localStorage.getItem('appstate');
+		var flags = storedData ? JSON.parse(storedData) : null;
+
+		// Load the Elm app, passing in the stored data.
+		var app = Elm.Main.init({
+			node: document.getElementById('elm'),
+			flags: flags
+		});
+
+		window.onblur = function () { app.ports.blurs.send({}) }
+
+		channel.onmessage = function (event) {
+			app.ports.updateState.send(event.data)
+		}
+		// Listen for commands from the `setStorage` port.
+		// Turn the data to a string and put it in localStorage.
+		app.ports.setStorage.subscribe(function (state) {
+			channel.postMessage(state)
+			localStorage.setItem('appstate', JSON.stringify(state));
+		});
+		app.ports.logError.subscribe(console.error);
+
+	</script>
+
+</body>
+
+</html>

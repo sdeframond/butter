@@ -2,5 +2,4 @@ elm-stuff
 *.sublime-workspace
 *.sublime-project
 node_modules
-index.html
 /build
