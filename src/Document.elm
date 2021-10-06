@@ -38,7 +38,7 @@ import Json.Decode
 import Json.Encode
 import Name exposing (Name)
 import NamedAndOrderedStore as Store exposing (NamedAndOrderedStore, currentName)
-import PositiveInt
+import PositiveInt exposing (PositiveInt)
 import Sheet exposing (Sheet)
 import Time
 import Types
@@ -64,7 +64,11 @@ type alias ModelData =
 
 
 type Action
-    = RenameSheetAction { sheetId : Types.SheetId, old : Name, new : Name }
+    = RenameSheetAction RenameSheetActionData
+
+
+type alias RenameSheetActionData =
+    { sheetId : Types.SheetId, old : Name, new : Name }
 
 
 
@@ -463,11 +467,19 @@ jsonKeys :
     { store : String
     , undo : String
     , redo : String
+    , renameSheetAction : String
+    , sheetId : String
+    , old : String
+    , new : String
     }
 jsonKeys =
     { store = "store"
     , undo = "undo"
     , redo = "redo"
+    , renameSheetAction = "renameSheet"
+    , sheetId = "sheetId"
+    , old = "old"
+    , new = "new"
     }
 
 
@@ -476,13 +488,49 @@ decoder =
     Json.Decode.map4 ModelData
         (Json.Decode.field jsonKeys.store (Store.decoder Sheet.decoder))
         (Json.Decode.succeed Nothing)
-        (Json.Decode.succeed [])
-        (Json.Decode.succeed [])
+        (Json.Decode.field jsonKeys.undo (Json.Decode.list actionDecoder))
+        (Json.Decode.field jsonKeys.redo (Json.Decode.list actionDecoder))
         |> Json.Decode.map Model
+
+
+actionDecoder : Json.Decode.Decoder Action
+actionDecoder =
+    let
+        do makeAction field valueDecoder =
+            Json.Decode.field field valueDecoder |> Json.Decode.map makeAction
+
+        renameSheetActionDecoder =
+            Json.Decode.map3 RenameSheetActionData
+                (Json.Decode.field jsonKeys.sheetId PositiveInt.decoder)
+                (Json.Decode.field jsonKeys.old Name.decoder)
+                (Json.Decode.field jsonKeys.new Name.decoder)
+    in
+    Json.Decode.oneOf
+        [ do RenameSheetAction jsonKeys.renameSheetAction renameSheetActionDecoder
+        ]
 
 
 encode : Model -> Json.Encode.Value
 encode (Model data) =
     Json.Encode.object
         [ ( jsonKeys.store, Store.encode Sheet.encode data.store )
+        , ( jsonKeys.undo, Json.Encode.list encodeAction data.undo )
+        , ( jsonKeys.redo, Json.Encode.list encodeAction data.redo )
         ]
+
+
+encodeAction : Action -> Json.Encode.Value
+encodeAction action =
+    let
+        encodeRenameSheetActionData data =
+            Json.Encode.object
+                [ ( jsonKeys.sheetId, PositiveInt.encode data.sheetId )
+                , ( jsonKeys.old, Name.encode data.old )
+                , ( jsonKeys.new, Name.encode data.new )
+                ]
+    in
+    case action of
+        RenameSheetAction data ->
+            Json.Encode.object
+                [ ( jsonKeys.renameSheetAction, encodeRenameSheetActionData data )
+                ]
