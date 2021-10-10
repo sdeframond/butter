@@ -55,6 +55,11 @@ type alias Model =
     }
 
 
+setDocumentStore : Model -> DocumentStore -> Model
+setDocumentStore model docs =
+    { model | documents = docs }
+
+
 
 -- INIT
 
@@ -107,7 +112,8 @@ port blurs : (Encode.Value -> msg) -> Sub msg
 type Msg
     = DocumentStoreMsg DocumentStoreMsg
     | KeyboardMsg Keyboard.Msg
-    | VisibilityChanged Visibility
+    | VisibilityChangedMsg Visibility
+    | SetDocumentStoreMsg DocumentStore
 
 
 type DocumentStoreMsg
@@ -121,42 +127,37 @@ type DocumentStoreMsg
     | DocumentLoaded File
     | DocumentsBytesLoaded String Bytes
     | DownloadDocument
-    | SetState DocumentStore
-
-
-updateAndSetStorage : DocumentStoreMsg -> Model -> ( Model, Cmd DocumentStoreMsg )
-updateAndSetStorage msg model =
-    let
-        ( newModel, cmds ) =
-            updateDocumentStore msg model
-    in
-    ( newModel
-    , case msg of
-        SetState _ ->
-            cmds
-
-        _ ->
-            Cmd.batch [ setStorage (encodeDocumentStore newModel.documents), cmds ]
-    )
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
+    let
+        setStorageCmd ( newModel, cmds ) =
+            ( newModel, Cmd.batch [ setStorage (encodeDocumentStore newModel.documents), cmds ] )
+    in
     case msg of
         DocumentStoreMsg storeMsg ->
-            updateAndSetStorage storeMsg model
+            updateDocumentStore storeMsg model
                 |> Tuple.mapSecond (Cmd.map DocumentStoreMsg)
+                |> setStorageCmd
 
         KeyboardMsg kbdMsg ->
             handleKeyboardMsg kbdMsg model
+                |> setStorageCmd
 
-        VisibilityChanged visibility ->
+        VisibilityChangedMsg visibility ->
             case visibility of
                 Hidden ->
                     ( { model | pressedKeys = [] }, Cmd.none )
 
                 Visible ->
                     ( model, Cmd.none )
+
+        SetDocumentStoreMsg newStore ->
+            ( Store.merge Document.merge newStore model.documents
+                |> setDocumentStore model
+            , Cmd.none
+            )
 
 
 handleKeyboardMsg : Keyboard.Msg -> Model -> ( Model, Cmd msg )
@@ -233,20 +234,17 @@ handleKeyboardMsg kbdMsg model =
 updateDocumentStore : DocumentStoreMsg -> Model -> ( Model, Cmd DocumentStoreMsg )
 updateDocumentStore msg model =
     let
-        setDocsIn model_ docs =
-            { model_ | documents = docs }
-
         selectDocumentById id model_ =
             Store.selectById identity id model_.documents
                 |> Maybe.withDefault model_.documents
-                |> setDocsIn model_
+                |> setDocumentStore model_
 
         commitEdit model_ =
             model_.docNameEditStatus
                 |> Maybe.andThen Name.fromString
                 |> Maybe.withDefault (Store.currentName model_.documents)
                 |> (\name -> Store.setName (Store.currentId model_.documents) name model_.documents)
-                |> Result.map (setDocsIn { model_ | docNameEditStatus = Nothing })
+                |> Result.map (setDocumentStore { model_ | docNameEditStatus = Nothing })
 
         withDefaultAndLogError default cmd r =
             case r of
@@ -265,7 +263,7 @@ updateDocumentStore msg model =
             Store.current model.documents
                 |> Document.update logDocumentError docMsg
                 |> Tuple.mapBoth
-                    (Store.setCurrent model.documents >> setDocsIn model)
+                    (Store.setCurrent model.documents >> setDocumentStore model)
                     (Cmd.map DocumentMsg)
 
         SelectDocument id ->
@@ -279,7 +277,7 @@ updateDocumentStore msg model =
             )
 
         RemoveDocument id ->
-            ( Store.remove id model.documents |> setDocsIn model
+            ( Store.remove id model.documents |> setDocumentStore model
             , Cmd.none
             )
 
@@ -290,7 +288,7 @@ updateDocumentStore msg model =
 
         AddDocument ->
             ( Store.insert defaultDocumentName Document.init model.documents
-                |> setDocsIn model
+                |> setDocumentStore model
             , Cmd.none
             )
 
@@ -315,7 +313,7 @@ updateDocumentStore msg model =
             ( Document.fromBytes bytes
                 |> Maybe.map (\doc -> Store.insert (Name.sanitize nameStr) doc model.documents)
                 |> Maybe.withDefault model.documents
-                |> setDocsIn model
+                |> setDocumentStore model
             , Cmd.none
             )
 
@@ -330,12 +328,6 @@ updateDocumentStore msg model =
                 |> File.Download.bytes (Name.toString docName ++ ".butter") "application/butter"
             )
 
-        SetState newStore ->
-            ( Store.merge Document.merge newStore model.documents
-                |> setDocsIn model
-            , Cmd.none
-            )
-
 
 
 -- SUBSCRIPTIONS
@@ -346,8 +338,13 @@ subscriptions model =
     Sub.batch
         [ storeSubscriptions model.documents |> Sub.map DocumentStoreMsg
         , Keyboard.subscriptions |> Sub.map KeyboardMsg
-        , onVisibilityChange VisibilityChanged
-        , blurs (always <| VisibilityChanged Hidden)
+        , onVisibilityChange VisibilityChangedMsg
+        , blurs (always <| VisibilityChangedMsg Hidden)
+        , updateState
+            (Decode.decodeValue documentStoreDecoder
+                >> Result.withDefault model.documents
+                >> SetDocumentStoreMsg
+            )
         ]
 
 
@@ -357,11 +354,6 @@ storeSubscriptions model =
         [ Store.current model
             |> Document.subscriptions
             |> Sub.map DocumentMsg
-        , updateState
-            (Decode.decodeValue documentStoreDecoder
-                >> Result.withDefault model
-                >> SetState
-            )
         ]
 
 

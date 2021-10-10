@@ -38,7 +38,7 @@ import Json.Decode
 import Json.Encode
 import Name exposing (Name)
 import NamedAndOrderedStore as Store exposing (NamedAndOrderedStore, currentName)
-import PositiveInt exposing (PositiveInt)
+import PositiveInt
 import Sheet exposing (Sheet)
 import Time
 import Types
