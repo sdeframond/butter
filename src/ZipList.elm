@@ -7,11 +7,13 @@ module ZipList exposing
     , filter
     , get
     , map
+    , mapState
     , member
     , select
     , setCurrent
     , singleton
     , toList
+    , zipMap
     )
 
 import Html exposing (a)
@@ -48,9 +50,59 @@ map f (ZipList { before_, current_, after_ }) =
     ZipList (Data (L.map f before_) (f current_) (L.map f after_))
 
 
+mapState : (s -> a -> ( s, a )) -> s -> ZipList a -> ( s, ZipList a )
+mapState f state (ZipList { before_, current_, after_ }) =
+    let
+        wrappedF : a -> ( s, List a ) -> ( s, List a )
+        wrappedF item ( s, list ) =
+            f s item
+                |> Tuple.mapSecond (\newItem -> newItem :: list)
+
+        ( stateAfterBefore, newBefore ) =
+            List.foldr wrappedF ( state, [] ) before_
+
+        ( stateAfterCurrent, newCurrent ) =
+            f stateAfterBefore current_
+
+        ( finalState, newAfter ) =
+            List.foldr wrappedF ( stateAfterCurrent, [] ) after_
+    in
+    ( finalState
+    , ZipList
+        { before_ = newBefore
+        , current_ = newCurrent
+        , after_ = newAfter
+        }
+    )
+
+
+zipMap : (ZipList a -> Bool -> b) -> ZipList a -> List b
+zipMap f zl =
+    let
+        go : List a -> a -> List a -> List b
+        go before current_ after =
+            let
+                currentZL =
+                    ZipList (Data before current_ after)
+            in
+            case after of
+                [] ->
+                    [ f currentZL (currentZL == zl) ]
+
+                head :: rest ->
+                    f currentZL (currentZL == zl) :: go (current_ :: before) head rest
+    in
+    case toList zl of
+        [] ->
+            []
+
+        head :: rest ->
+            go [] head rest
+
+
 toList : ZipList a -> List a
 toList (ZipList { before_, current_, after_ }) =
-    L.concat [ before_, [ current_ ], after_ ]
+    L.concat [ List.reverse before_, [ current_ ], after_ ]
 
 
 {-| Move `current` to the first item the matches the given condition.
@@ -71,7 +123,7 @@ select f (ZipList { before_, current_, after_ }) =
 
                     Nothing ->
                         -- the new localCurrent item has not been found yet, append to before_
-                        ( L.append localBefore [ item ], localCurrent, localAfter )
+                        ( item :: localBefore, localCurrent, localAfter )
 
         ( newBefore, maybeCurrent, newAfter ) =
             L.foldl process

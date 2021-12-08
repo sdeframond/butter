@@ -39,4 +39,11 @@ suite =
                         |> Maybe.map ZL.toList
                         |> Expect.equal (Just [ True, True ])
             ]
+        , describe "zipMap" <|
+            [ test "toto" <|
+                \_ ->
+                    zlist
+                        |> ZL.zipMap (\zl cur -> ( ZL.current zl, cur ))
+                        |> Expect.equal [ ( 1, True ), ( 2, False ), ( 3, False ), ( 4, False ), ( 5, False ) ]
+            ]
         ]

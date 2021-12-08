@@ -30,7 +30,9 @@ main : Program Encode.Value Model Msg
 main =
     Browser.document
         { init = init
-        , update = update
+        , update =
+            \msg model ->
+                update msg model |> setStorageCmd msg
         , view = view
         , subscriptions = subscriptions
         }
@@ -50,7 +52,6 @@ type alias DocumentStore =
 
 type alias Model =
     { documents : DocumentStore
-    , docNameEditStatus : Maybe String
     , pressedKeys : List Keyboard.Key
     }
 
@@ -72,12 +73,11 @@ defaultDocumentName =
 init : Encode.Value -> ( Model, Cmd Msg )
 init flags =
     initStore flags
-        |> Tuple.mapBoth
-            (\store -> { documents = store, pressedKeys = [], docNameEditStatus = Nothing })
-            (Cmd.map DocumentStoreMsg)
+        |> Tuple.mapFirst
+            (\store -> { documents = store, pressedKeys = [] })
 
 
-initStore : Encode.Value -> ( DocumentStore, Cmd DocumentStoreMsg )
+initStore : Encode.Value -> ( DocumentStore, Cmd Msg )
 initStore jsonValue =
     case Decode.decodeValue documentStoreDecoder jsonValue of
         Ok store ->
@@ -110,18 +110,12 @@ port blurs : (Encode.Value -> msg) -> Sub msg
 
 
 type Msg
-    = DocumentStoreMsg DocumentStoreMsg
-    | KeyboardMsg Keyboard.Msg
+    = KeyboardMsg Keyboard.Msg
     | VisibilityChangedMsg Visibility
-    | SetDocumentStoreMsg DocumentStore
-
-
-type DocumentStoreMsg
-    = DocumentMsg Document.Msg
-    | SelectDocument Store.Id
-    | EditDocumentName
+    | MergeDocumentStoreMsg DocumentStore
+    | SetDocumentStore DocumentStore
+    | DocumentMsg Document.Msg
     | RemoveDocument Store.Id
-    | UpdateDocumentName String
     | AddDocument
     | OpenDocument
     | DocumentLoaded File
@@ -129,21 +123,23 @@ type DocumentStoreMsg
     | DownloadDocument
 
 
+setStorageCmd : Msg -> ( Model, Cmd Msg ) -> ( Model, Cmd Msg )
+setStorageCmd msg ( newModel, cmds ) =
+    case msg of
+        MergeDocumentStoreMsg _ ->
+            ( newModel, cmds )
+
+        _ ->
+            ( newModel
+            , Cmd.batch [ setStorage (encodeDocumentStore newModel.documents), cmds ]
+            )
+
+
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
-    let
-        setStorageCmd ( newModel, cmds ) =
-            ( newModel, Cmd.batch [ setStorage (encodeDocumentStore newModel.documents), cmds ] )
-    in
-    case msg of
-        DocumentStoreMsg storeMsg ->
-            updateDocumentStore storeMsg model
-                |> Tuple.mapSecond (Cmd.map DocumentStoreMsg)
-                |> setStorageCmd
-
+    case Debug.log "msg" msg of
         KeyboardMsg kbdMsg ->
             handleKeyboardMsg kbdMsg model
-                |> setStorageCmd
 
         VisibilityChangedMsg visibility ->
             case visibility of
@@ -153,10 +149,69 @@ update msg model =
                 Visible ->
                     ( model, Cmd.none )
 
-        SetDocumentStoreMsg newStore ->
+        MergeDocumentStoreMsg newStore ->
             ( Store.merge Document.merge newStore model.documents
                 |> setDocumentStore model
             , Cmd.none
+            )
+
+        SetDocumentStore documents ->
+            ( setDocumentStore model documents
+            , Cmd.none
+            )
+
+        DocumentMsg docMsg ->
+            Store.current model.documents
+                |> Document.update docMsg
+                |> Tuple.mapBoth
+                    (Store.setCurrent model.documents >> setDocumentStore model)
+                    (Cmd.map DocumentMsg)
+
+        RemoveDocument id ->
+            ( Store.remove id model.documents |> setDocumentStore model
+            , Cmd.none
+            )
+
+        AddDocument ->
+            ( Store.insert defaultDocumentName Document.init model.documents
+                |> setDocumentStore model
+            , Cmd.none
+            )
+
+        OpenDocument ->
+            ( model
+            , File.Select.file [ "application/butter" ] DocumentLoaded
+            )
+
+        DocumentLoaded file ->
+            let
+                fileName =
+                    File.name file
+
+                docName =
+                    fileName |> String.split "." |> List.head |> Maybe.withDefault fileName
+            in
+            ( model
+            , Task.perform (DocumentsBytesLoaded docName) (File.toBytes file)
+            )
+
+        DocumentsBytesLoaded nameStr bytes ->
+            ( Document.fromBytes bytes
+                |> Maybe.map (\doc -> Store.insert (Name.sanitize nameStr) doc model.documents)
+                |> Maybe.withDefault model.documents
+                |> setDocumentStore model
+            , Cmd.none
+            )
+
+        DownloadDocument ->
+            let
+                docName =
+                    Store.currentName model.documents
+            in
+            ( model
+            , Store.current model.documents
+                |> Document.toBytes
+                |> File.Download.bytes (Name.toString docName ++ ".butter") "application/butter"
             )
 
 
@@ -231,104 +286,6 @@ handleKeyboardMsg kbdMsg model =
         |> logDocsError
 
 
-updateDocumentStore : DocumentStoreMsg -> Model -> ( Model, Cmd DocumentStoreMsg )
-updateDocumentStore msg model =
-    let
-        selectDocumentById id model_ =
-            Store.selectById identity id model_.documents
-                |> Maybe.withDefault model_.documents
-                |> setDocumentStore model_
-
-        commitEdit model_ =
-            model_.docNameEditStatus
-                |> Maybe.andThen Name.fromString
-                |> Maybe.withDefault (Store.currentName model_.documents)
-                |> (\name -> Store.setName (Store.currentId model_.documents) name model_.documents)
-                |> Result.map (setDocumentStore { model_ | docNameEditStatus = Nothing })
-
-        withDefaultAndLogError default cmd r =
-            case r of
-                Ok m ->
-                    ( m, cmd )
-
-                Err e ->
-                    ( default, Cmd.batch [ cmd, e |> Types.errorToString |> logError ] )
-    in
-    case msg of
-        DocumentMsg docMsg ->
-            let
-                logDocumentError str =
-                    (Store.currentName model.documents |> Name.toString) ++ ": " ++ str |> logError
-            in
-            Store.current model.documents
-                |> Document.update logDocumentError docMsg
-                |> Tuple.mapBoth
-                    (Store.setCurrent model.documents >> setDocumentStore model)
-                    (Cmd.map DocumentMsg)
-
-        SelectDocument id ->
-            commitEdit model
-                |> withDefaultAndLogError model Cmd.none
-                |> Tuple.mapFirst (selectDocumentById id)
-
-        EditDocumentName ->
-            ( { model | docNameEditStatus = Just (Store.currentName model.documents |> Name.toString) }
-            , Cmd.none
-            )
-
-        RemoveDocument id ->
-            ( Store.remove id model.documents |> setDocumentStore model
-            , Cmd.none
-            )
-
-        UpdateDocumentName nameStr ->
-            ( { model | docNameEditStatus = Just nameStr }
-            , Cmd.none
-            )
-
-        AddDocument ->
-            ( Store.insert defaultDocumentName Document.init model.documents
-                |> setDocumentStore model
-            , Cmd.none
-            )
-
-        OpenDocument ->
-            ( model
-            , File.Select.file [ "application/butter" ] DocumentLoaded
-            )
-
-        DocumentLoaded file ->
-            let
-                fileName =
-                    File.name file
-
-                docName =
-                    fileName |> String.split "." |> List.head |> Maybe.withDefault fileName
-            in
-            ( model
-            , Task.perform (DocumentsBytesLoaded docName) (File.toBytes file)
-            )
-
-        DocumentsBytesLoaded nameStr bytes ->
-            ( Document.fromBytes bytes
-                |> Maybe.map (\doc -> Store.insert (Name.sanitize nameStr) doc model.documents)
-                |> Maybe.withDefault model.documents
-                |> setDocumentStore model
-            , Cmd.none
-            )
-
-        DownloadDocument ->
-            let
-                docName =
-                    Store.currentName model.documents
-            in
-            ( model
-            , Store.current model.documents
-                |> Document.toBytes
-                |> File.Download.bytes (Name.toString docName ++ ".butter") "application/butter"
-            )
-
-
 
 -- SUBSCRIPTIONS
 
@@ -336,19 +293,19 @@ updateDocumentStore msg model =
 subscriptions : Model -> Sub Msg
 subscriptions model =
     Sub.batch
-        [ storeSubscriptions model.documents |> Sub.map DocumentStoreMsg
+        [ storeSubscriptions model.documents
         , Keyboard.subscriptions |> Sub.map KeyboardMsg
         , onVisibilityChange VisibilityChangedMsg
         , blurs (always <| VisibilityChangedMsg Hidden)
         , updateState
             (Decode.decodeValue documentStoreDecoder
                 >> Result.withDefault model.documents
-                >> SetDocumentStoreMsg
+                >> MergeDocumentStoreMsg
             )
         ]
 
 
-storeSubscriptions : DocumentStore -> Sub DocumentStoreMsg
+storeSubscriptions : DocumentStore -> Sub Msg
 storeSubscriptions model =
     Sub.batch
         [ Store.current model
@@ -366,25 +323,23 @@ view model =
     { title = "Butter Spreadsheet"
     , body =
         viewBody model
-            |> List.map (Html.map DocumentStoreMsg)
             |> List.map Html.toUnstyled
     }
 
 
-viewBody : Model -> List (Html DocumentStoreMsg)
+viewBody : Model -> List (Html Msg)
 viewBody model =
     let
-        docItem item =
+        docItem documents isCurrent =
             Ui.editableListItem
-                { onSelect = SelectDocument
-                , onEdit = EditDocumentName
-                , onRemove = RemoveDocument
-                , onUpdate = UpdateDocumentName
+                { onSelect = \_ -> documents |> Store.commitEdits |> SetDocumentStore
+                , onEdit = \_ -> documents |> Store.editCurrentName |> SetDocumentStore
+                , onRemove = \_ -> documents |> Store.currentId |> RemoveDocument
+                , onUpdate = (\str -> Store.updateCurrentEditedName str documents) >> SetDocumentStore
                 }
-                { id = item.id
-                , name = Name.toString item.name
-                , isCurrent = Store.isCurrentId item.id model.documents
-                , editStatus = model.docNameEditStatus
+                { name = Store.currentName documents |> Name.toString
+                , isCurrent = isCurrent
+                , editStatus = Store.getCurrentEditStatus documents
                 }
     in
     [ Global.global
@@ -409,9 +364,7 @@ viewBody model =
                 , Ui.button [ onClick OpenDocument ] [ Html.text "Upload..." ]
                 , Ui.button [ onClick DownloadDocument ] [ Html.text "Download" ]
                 ]
-                :: (Store.toItemList model.documents
-                        |> List.map docItem
-                   )
+                :: Store.zipMap docItem model.documents
             )
         , Store.current model.documents
             |> Document.view

@@ -11,7 +11,6 @@ module Document exposing
     , getCurrentSheetId
     , getCurrentSheetName
     , getSheetNameById
-    , getSheets
     , init
     , insertSheet
     , merge
@@ -22,8 +21,8 @@ module Document exposing
     , toBytes
     , undo
     , update
+    , updateCurrentEditedSheetName
     , updateCurrentSheet
-    , updateEditedSheetName
     , view
     )
 
@@ -37,7 +36,7 @@ import Html.Styled.Events as Events
 import Json.Decode
 import Json.Encode
 import Name exposing (Name)
-import NamedAndOrderedStore as Store exposing (NamedAndOrderedStore, currentName)
+import NamedAndOrderedStore as Store exposing (NamedAndOrderedStore)
 import PositiveInt
 import Sheet exposing (Sheet)
 import Time
@@ -57,7 +56,6 @@ type Model
 
 type alias ModelData =
     { store : Store Sheet
-    , sheetEditStatus : Maybe String
     , undo : List Action
     , redo : List Action
     }
@@ -69,11 +67,6 @@ type Action
 
 type alias RenameSheetActionData =
     { sheetId : Types.SheetId, old : Name, new : Name }
-
-
-
--- | RemoveSheetAction Types.SheetId Sheet
--- | InsertSheetAction Types.SheetId Sheet.Params
 
 
 defaultSheetName : Name
@@ -89,29 +82,7 @@ init =
                 |> Store.init defaultSheetName
         , undo = []
         , redo = []
-        , sheetEditStatus = Nothing
         }
-
-
-pushHistory : Action -> Model -> Model
-pushHistory action (Model data) =
-    Model { data | undo = action :: data.undo }
-
-
-applyAction : Action -> Model -> Result Types.Error Model
-applyAction action (Model data) =
-    case action of
-        RenameSheetAction { sheetId, new } ->
-            Store.setName sheetId new data.store
-                |> Result.map (\store -> Model { data | store = store })
-
-
-unApplyAction : Action -> Model -> Result Types.Error Model
-unApplyAction action (Model data) =
-    case action of
-        RenameSheetAction { sheetId, old } ->
-            Store.setName sheetId old data.store
-                |> Result.map (\store -> Model { data | store = store })
 
 
 undo : Model -> Result Types.Error Model
@@ -123,7 +94,8 @@ undo (Model data) =
                     | undo = previous
                     , redo = action :: data.redo
                 }
-                |> unApplyAction action
+                -- |> unApplyAction action
+                |> Ok
 
         _ ->
             Model data |> Result.Ok
@@ -138,7 +110,8 @@ redo (Model data) =
                     | undo = action :: data.undo
                     , redo = next
                 }
-                |> applyAction action
+                -- |> applyAction action
+                |> Ok
 
         _ ->
             Model data |> Result.Ok
@@ -178,7 +151,7 @@ fromBytes bytes =
 
 cancelEdits : Model -> Model
 cancelEdits (Model data) =
-    Model { data | sheetEditStatus = Nothing }
+    Model { data | store = Store.cancelEdits data.store }
 
 
 merge : Model -> Model -> Model
@@ -195,42 +168,16 @@ getCurrentSheet (Model { store }) =
     Store.current store
 
 
-setSheetName : Types.SheetId -> String -> Model -> Result Types.Error Model
-setSheetName sheetId str model =
-    let
-        makeAction newName =
-            RenameSheetAction
-                { sheetId = sheetId
-                , old = getCurrentSheetName model
-                , new = newName
-                }
-
-        apply action =
-            applyAction action model |> Result.map (pushHistory action)
-    in
-    Name.fromString str
-        |> Result.fromMaybe Types.InvalidSheetNameError
-        |> Result.map makeAction
-        |> Result.andThen apply
-
-
-commitEditedSheetName : Model -> Model
-commitEditedSheetName model =
-    case getCurrentSheetEditStatus model of
-        Just str ->
-            setSheetName (getCurrentSheetId model) str model
-                |> Result.withDefault model
-                |> cancelEdits
-
-        Nothing ->
-            model
+commitEditedSheetNames : Model -> Model
+commitEditedSheetNames (Model data) =
+    Model { data | store = Store.commitEdits data.store }
 
 
 updateCurrentSheet : Sheet.Msg -> Model -> ( Model, Cmd Sheet.Msg )
 updateCurrentSheet msg model_ =
     let
         ((Model data) as model) =
-            commitEditedSheetName model_
+            commitEditedSheetNames model_
 
         setCurrent sheet =
             Model
@@ -261,7 +208,7 @@ selectSheet sheetId model =
                 |> Maybe.map (\store -> Model { data | store = store })
     in
     model
-        |> commitEditedSheetName
+        |> commitEditedSheetNames
         |> doSelect
 
 
@@ -272,12 +219,12 @@ removeSheet sheetId (Model data) =
 
 editCurrentSheetName : Model -> Model
 editCurrentSheetName (Model data) =
-    Model { data | sheetEditStatus = currentName data.store |> Name.toString |> Just }
+    Model { data | store = Store.editCurrentName data.store }
 
 
-updateEditedSheetName : String -> Model -> Model
-updateEditedSheetName input (Model data) =
-    Model { data | sheetEditStatus = Just input }
+updateCurrentEditedSheetName : String -> Model -> Model
+updateCurrentEditedSheetName input (Model data) =
+    Model { data | store = Store.updateCurrentEditedName input data.store }
 
 
 getCurrentSheetId : Model -> Types.SheetId
@@ -297,12 +244,16 @@ getSheetNameById id (Model data) =
 
 getCurrentSheetEditStatus : Model -> Maybe String
 getCurrentSheetEditStatus (Model data) =
-    data.sheetEditStatus
+    Store.getCurrentEditStatus data.store
 
 
-getSheets : Model -> List { id : Types.SheetId, name : Name, value : Sheet }
-getSheets (Model data) =
-    Store.toItemList data.store
+zipMapSheets : (Model -> Bool -> a) -> Model -> List a
+zipMapSheets f (Model data) =
+    let
+        go store isCurrent =
+            f (Model { data | store = store }) isCurrent
+    in
+    Store.zipMap go data.store
 
 
 
@@ -323,14 +274,14 @@ subscriptions model =
 type Msg
     = SheetMsg Sheet.Msg
     | InsertSheet Sheet.Params
-    | SelectSheet Types.SheetId
     | RemoveSheet Types.SheetId
     | EditCurrentSheetName
     | UpdateEditedSheetName String
+    | SetModel Model
 
 
-update : (String -> Cmd Msg) -> Msg -> Model -> ( Model, Cmd Msg )
-update logError msg model =
+update : Msg -> Model -> ( Model, Cmd Msg )
+update msg model =
     case msg of
         SheetMsg sheetMsg ->
             updateCurrentSheet sheetMsg model
@@ -339,14 +290,6 @@ update logError msg model =
         InsertSheet params ->
             ( insertSheet params model, Cmd.none )
 
-        SelectSheet sheetId ->
-            case selectSheet sheetId model of
-                Just newModel ->
-                    ( newModel, Cmd.none )
-
-                Nothing ->
-                    ( model, logError <| "Selected sheet does not exist. SheetId = " ++ PositiveInt.toString sheetId )
-
         RemoveSheet sheetId ->
             ( removeSheet sheetId model, Cmd.none )
 
@@ -354,7 +297,10 @@ update logError msg model =
             ( editCurrentSheetName model, Cmd.none )
 
         UpdateEditedSheetName input ->
-            ( updateEditedSheetName input model, Cmd.none )
+            ( updateCurrentEditedSheetName input model, Cmd.none )
+
+        SetModel m ->
+            ( m, Cmd.none )
 
 
 
@@ -437,17 +383,17 @@ viewCurrentSheet model =
 sheetSelector : Model -> Html Msg
 sheetSelector model =
     let
-        sheetItem item =
+        sheetItem : Model -> Bool -> Html Msg
+        sheetItem zippedModel isCurrent =
             Ui.editableListItem
-                { onSelect = SelectSheet
-                , onEdit = EditCurrentSheetName
-                , onRemove = RemoveSheet
+                { onSelect = \_ -> zippedModel |> commitEditedSheetNames |> SetModel
+                , onEdit = \_ -> EditCurrentSheetName
+                , onRemove = \_ -> zippedModel |> getCurrentSheetId |> RemoveSheet
                 , onUpdate = UpdateEditedSheetName
                 }
-                { id = item.id
-                , name = Name.toString item.name
-                , isCurrent = getCurrentSheetId model == item.id
-                , editStatus = getCurrentSheetEditStatus model
+                { name = getCurrentSheetName zippedModel |> Name.toString
+                , isCurrent = isCurrent
+                , editStatus = getCurrentSheetEditStatus zippedModel
                 }
 
         addSheet msg label =
@@ -459,7 +405,7 @@ sheetSelector model =
     Ui.row []
         (addSheet (InsertSheet Sheet.allParams.table) "+table"
             :: addSheet (InsertSheet Sheet.allParams.grid) "+grid"
-            :: (getSheets model |> List.map sheetItem)
+            :: zipMapSheets sheetItem model
         )
 
 
@@ -485,9 +431,8 @@ jsonKeys =
 
 decoder : Json.Decode.Decoder Model
 decoder =
-    Json.Decode.map4 ModelData
+    Json.Decode.map3 ModelData
         (Json.Decode.field jsonKeys.store (Store.decoder Sheet.decoder))
-        (Json.Decode.succeed Nothing)
         (Json.Decode.field jsonKeys.undo (Json.Decode.list actionDecoder))
         (Json.Decode.field jsonKeys.redo (Json.Decode.list actionDecoder))
         |> Json.Decode.map Model

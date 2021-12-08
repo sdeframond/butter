@@ -1,12 +1,16 @@
 module NamedAndOrderedStore exposing
     ( Id
     , NamedAndOrderedStore
+    , cancelEdits
+    , commitEdits
     , current
     , currentId
     , currentName
     , decoder
+    , editCurrentName
     , encode
     , getById
+    , getCurrentEditStatus
     , getIdByName
     , getNameById
     , init
@@ -18,6 +22,8 @@ module NamedAndOrderedStore exposing
     , setCurrent
     , setName
     , toItemList
+    , updateCurrentEditedName
+    , zipMap
     )
 
 import Json.Decode as Decode
@@ -40,7 +46,7 @@ type alias Data a =
 
 
 type alias Item a =
-    { id : PositiveInt, name : Name, value : a }
+    { id : PositiveInt, name : Name, value : a, editStatus : Maybe String }
 
 
 type alias Id =
@@ -58,7 +64,7 @@ init initName item =
             Id.one
     in
     Store
-        { items = ZL.singleton { id = initId, name = initName, value = item }
+        { items = ZL.singleton { id = initId, name = initName, value = item, editStatus = Nothing }
         , nameIndex = Name.fromList [ ( initName, initId ) ]
         , nextId = Id.next initId
         }
@@ -84,9 +90,91 @@ currentName store =
     currentItem store |> .name
 
 
+cancelEdits : NamedAndOrderedStore a -> NamedAndOrderedStore a
+cancelEdits (Store data) =
+    let
+        items =
+            data.items
+                |> ZL.map (\i -> { i | editStatus = Nothing })
+    in
+    Store { data | items = items }
+
+
+commitEdits : NamedAndOrderedStore a -> NamedAndOrderedStore a
+commitEdits ((Store data) as store) =
+    let
+        commitItem nameIndex item =
+            case item.editStatus of
+                Just str ->
+                    let
+                        newName =
+                            Name.fromString str |> Maybe.withDefault item.name
+                    in
+                    if Name.member newName nameIndex then
+                        ( nameIndex, { item | editStatus = Nothing } )
+
+                    else
+                        ( data.nameIndex
+                            |> Name.remove item.name
+                            |> Name.insert newName (currentId store)
+                        , { item
+                            | name = newName
+                            , editStatus = Nothing
+                          }
+                        )
+
+                Nothing ->
+                    ( nameIndex, item )
+
+        ( newNameIndex, newItems ) =
+            ZL.mapState commitItem data.nameIndex data.items
+    in
+    Store { data | items = newItems, nameIndex = newNameIndex }
+
+
+setCurrentItem : Item a -> NamedAndOrderedStore a -> NamedAndOrderedStore a
+setCurrentItem item (Store data) =
+    Store { data | items = ZL.setCurrent item data.items }
+
+
+updateCurrentItem : (Item a -> Item a) -> NamedAndOrderedStore a -> NamedAndOrderedStore a
+updateCurrentItem f store =
+    let
+        item =
+            currentItem store |> f
+    in
+    setCurrentItem item store
+
+
+editCurrentName : NamedAndOrderedStore a -> NamedAndOrderedStore a
+editCurrentName store =
+    updateCurrentItem
+        (\item -> { item | editStatus = store |> currentName |> Name.toString |> Just })
+        store
+
+
+updateCurrentEditedName : String -> NamedAndOrderedStore a -> NamedAndOrderedStore a
+updateCurrentEditedName input store =
+    updateCurrentItem (\item -> { item | editStatus = Just input }) store
+
+
+getCurrentEditStatus : NamedAndOrderedStore a -> Maybe String
+getCurrentEditStatus =
+    currentItem >> .editStatus
+
+
 toItemList : NamedAndOrderedStore a -> List (Item a)
 toItemList (Store { items }) =
     items |> ZL.toList
+
+
+zipMap : (NamedAndOrderedStore a -> Bool -> b) -> NamedAndOrderedStore a -> List b
+zipMap f (Store data) =
+    let
+        go items isCurrent =
+            f (Store { data | items = items }) isCurrent
+    in
+    ZL.zipMap go data.items
 
 
 merge : (a -> a -> a) -> NamedAndOrderedStore a -> NamedAndOrderedStore a -> NamedAndOrderedStore a
@@ -165,7 +253,7 @@ insert name item (Store model) =
     in
     Store <|
         { model
-            | items = ZL.append [ { id = model.nextId, name = finalName, value = item } ] model.items
+            | items = ZL.append [ { id = model.nextId, name = finalName, value = item, editStatus = Nothing } ] model.items
             , nextId = Id.next model.nextId
             , nameIndex = Name.insert finalName model.nextId model.nameIndex
         }
@@ -205,6 +293,7 @@ setName id name ((Store data) as model) =
                         else
                             item.name
                     , value = item.value
+                    , editStatus = Nothing
                     }
             in
             Store
@@ -238,24 +327,20 @@ setName id name ((Store data) as model) =
 setCurrent : NamedAndOrderedStore a -> a -> NamedAndOrderedStore a
 setCurrent ((Store data) as model) newSheet =
     { data
-        | items = ZL.setCurrent { id = currentId model, name = currentName model, value = newSheet } data.items
+        | items = ZL.setCurrent { id = currentId model, name = currentName model, value = newSheet, editStatus = Nothing } data.items
     }
         |> Store
 
 
 mapCurrent : (a -> a) -> NamedAndOrderedStore a -> NamedAndOrderedStore a
-mapCurrent fn ((Store data) as model) =
+mapCurrent fn store =
     let
         mapValue item =
             { item | value = fn item.value }
-
-        setCurrentItem item =
-            { data | items = ZL.setCurrent item data.items }
     in
-    currentItem model
+    currentItem store
         |> mapValue
-        |> setCurrentItem
-        |> Store
+        |> (\item -> setCurrentItem item store)
 
 
 
@@ -315,10 +400,11 @@ decoder makeValueDecoder =
 
 itemDecoder : Decode.Decoder a -> Decode.Decoder (Item a)
 itemDecoder valueDecoder =
-    Decode.map3 Item
+    Decode.map4 Item
         (Decode.field jsonKeys.id Id.decoder)
         (Decode.field jsonKeys.name Name.decoder)
         (Decode.field jsonKeys.value <| valueDecoder)
+        (Decode.succeed Nothing)
 
 
 encode : ((Id -> Maybe Name) -> a -> Encode.Value) -> NamedAndOrderedStore a -> Encode.Value

@@ -4,6 +4,7 @@ import Css exposing (..)
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as Attr exposing (css)
 import Html.Styled.Events as Events
+import Json.Decode as Decode
 
 
 fullRow : List (H.Attribute msg) -> List (Html msg) -> Html msg
@@ -52,23 +53,38 @@ button attrs content =
         content
 
 
-type alias EditableListItemConfig id msg =
-    { onSelect : id -> msg
-    , onEdit : msg
-    , onRemove : id -> msg
+type alias EditableListItemConfig msg =
+    { onSelect : () -> msg
+    , onEdit : () -> msg
+    , onRemove : () -> msg
     , onUpdate : String -> msg
     }
 
 
-type alias EditableListItem id =
-    { id : id
-    , name : String
+type alias EditableListItem =
+    { name : String
     , isCurrent : Bool
     , editStatus : Maybe String
     }
 
 
-editableListItem : EditableListItemConfig id msg -> EditableListItem id -> Html msg
+lazyOnClickStopPropagation : (() -> msg) -> H.Attribute msg
+lazyOnClickStopPropagation f =
+    Events.stopPropagationOn "click"
+        (Decode.succeed () |> Decode.map f |> Decode.map (\msg -> ( msg, True )))
+
+
+lazyOnClick : (() -> msg) -> H.Attribute msg
+lazyOnClick f =
+    Events.on "click" (Decode.succeed () |> Decode.map f)
+
+
+lazyOnDoubleClick : (() -> msg) -> H.Attribute msg
+lazyOnDoubleClick f =
+    Events.on "dblclick" (Decode.succeed () |> Decode.map f)
+
+
+editableListItem : EditableListItemConfig msg -> EditableListItem -> Html msg
 editableListItem { onSelect, onEdit, onRemove, onUpdate } item =
     let
         defaultItem isCurrent =
@@ -83,8 +99,8 @@ editableListItem { onSelect, onEdit, onRemove, onUpdate } item =
                     , justifyContent spaceBetween
                     , overflow hidden
                     ]
-                , Events.onClick <| onSelect item.id
-                , Events.onDoubleClick <| onEdit
+                , lazyOnClick onSelect
+                , lazyOnDoubleClick onEdit
                 ]
                 [ H.span
                     [ css
@@ -94,12 +110,12 @@ editableListItem { onSelect, onEdit, onRemove, onUpdate } item =
                         ]
                     ]
                     [ H.text item.name ]
-                , H.span [ Events.onClick <| onRemove item.id ]
+                , H.span [ lazyOnClickStopPropagation onRemove ]
                     [ H.text "[x]" ]
                 ]
     in
     case ( item.isCurrent, item.editStatus ) of
-        ( True, Just newName ) ->
+        ( _, Just newName ) ->
             button []
                 [ H.input
                     [ Attr.value newName
