@@ -5,7 +5,7 @@ import Browser.Events exposing (Visibility(..), onVisibilityChange)
 import Bytes exposing (Bytes)
 import Css
 import Css.Global as Global
-import Document
+import DocumentView as Document
 import File exposing (File)
 import File.Download
 import File.Select
