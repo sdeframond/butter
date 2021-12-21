@@ -18,7 +18,6 @@ import Keyboard
 import Name exposing (Name)
 import NamedAndOrderedStore as Store
 import Task
-import Types
 import Ui
 
 
@@ -139,7 +138,7 @@ update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case Debug.log "msg" msg of
         KeyboardMsg kbdMsg ->
-            handleKeyboardMsg kbdMsg model
+            ( handleKeyboardMsg kbdMsg model, Cmd.none )
 
         VisibilityChangedMsg visibility ->
             case visibility of
@@ -215,21 +214,13 @@ update msg model =
             )
 
 
-handleKeyboardMsg : Keyboard.Msg -> Model -> ( Model, Cmd msg )
+handleKeyboardMsg : Keyboard.Msg -> Model -> Model
 handleKeyboardMsg kbdMsg model =
     let
         mapDocs f docs =
             Store.current docs
                 |> f
-                |> Result.map (Store.setCurrent docs)
-
-        logDocsError docResult =
-            case docResult of
-                Ok docs ->
-                    ( { newModel | documents = docs }, Cmd.none )
-
-                Err error ->
-                    ( newModel, error |> Types.errorToString |> logError )
+                |> Store.setCurrent docs
 
         ( pressedKeys, changed ) =
             Keyboard.updateWithKeyChange Keyboard.anyKeyUpper kbdMsg model.pressedKeys
@@ -255,7 +246,7 @@ handleKeyboardMsg kbdMsg model =
                     Nothing
 
         default =
-            Ok newModel.documents
+            newModel.documents
 
         handleKey key =
             case key of
@@ -283,7 +274,7 @@ handleKeyboardMsg kbdMsg model =
         |> Maybe.andThen onlyKeyDown
         |> Maybe.map handleKey
         |> Maybe.withDefault default
-        |> logDocsError
+        |> (\docs -> { newModel | documents = docs })
 
 
 

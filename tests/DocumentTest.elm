@@ -1,6 +1,6 @@
 module DocumentTest exposing (suite)
 
-import Document
+import DocumentView as Document
 import Expect
 import Fuzz exposing (..)
 import Grid

@@ -16,7 +16,6 @@ module Core.Document exposing
     , insertSheet
     , merge
     , removeSheet
-    , selectSheet
     , toBytes
     , updateCurrentEditedSheetName
     , updateCurrentSheet
@@ -30,7 +29,6 @@ import Json.Decode
 import Json.Encode
 import Name exposing (Name)
 import NamedAndOrderedStore as Store exposing (NamedAndOrderedStore)
-import PositiveInt
 import Sheet exposing (Sheet)
 import Time
 import Types
@@ -89,8 +87,8 @@ commitEditedSheetNames (Model data) =
     Model { data | store = Store.commitEdits data.store }
 
 
-updateCurrentSheet : Sheet.Msg -> Model -> ( Model, Cmd Sheet.Msg )
-updateCurrentSheet msg model_ =
+updateCurrentSheet : ((Name -> Maybe Types.SheetId) -> Sheet.Sheet -> ( Sheet.Sheet, cmd )) -> Model -> ( Model, cmd )
+updateCurrentSheet func model_ =
     let
         ((Model data) as model) =
             commitEditedSheetNames model_
@@ -103,7 +101,7 @@ updateCurrentSheet msg model_ =
                             |> Store.setCurrent data.store
                 }
     in
-    Sheet.update (Store.getIdByName data.store) msg (getCurrentSheet model)
+    func (Store.getIdByName data.store) (getCurrentSheet model)
         |> Tuple.mapFirst setCurrent
 
 
@@ -113,19 +111,6 @@ insertSheet params (Model data) =
         { data
             | store = Store.insert defaultSheetName (Sheet.fromParams params) data.store
         }
-
-
-selectSheet : Types.SheetId -> Model -> Maybe Model
-selectSheet sheetId model =
-    let
-        doSelect (Model data) =
-            data.store
-                |> Store.selectById Sheet.commitEdit sheetId
-                |> Maybe.map (\store -> Model { data | store = store })
-    in
-    model
-        |> commitEditedSheetNames
-        |> doSelect
 
 
 removeSheet : Types.SheetId -> Model -> Model

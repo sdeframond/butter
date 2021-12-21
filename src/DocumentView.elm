@@ -15,7 +15,7 @@ module DocumentView exposing
     )
 
 import Bytes exposing (Bytes)
-import Core.Document as Document exposing (Model)
+import Core.DocumentWithUndo as Document exposing (Model)
 import Css exposing (..)
 import Html.Styled exposing (..)
 import Html.Styled.Attributes exposing (css)
@@ -52,14 +52,14 @@ fromBytes =
     Document.fromBytes
 
 
-undo : a
+undo : Model -> Model
 undo =
-    Debug.todo "undo"
+    Document.undo
 
 
-redo : a
+redo : Model -> Model
 redo =
-    Debug.todo "redo"
+    Document.redo
 
 
 decoder : Decoder Model
@@ -100,7 +100,11 @@ update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         SheetMsg sheetMsg ->
-            Document.updateCurrentSheet sheetMsg model
+            let
+                updateSheet getSheetId sheet =
+                    Sheet.update getSheetId sheetMsg sheet
+            in
+            Document.updateCurrentSheet updateSheet model
                 |> Tuple.mapSecond (Cmd.map SheetMsg)
 
         InsertSheet params ->
@@ -178,10 +182,20 @@ viewCurrentSheet model =
 sheetSelector : Model -> Html Msg
 sheetSelector model =
     let
+        isEditing =
+            Document.getCurrentSheetEditStatus model /= Nothing
+
         sheetItem : Model -> Bool -> Html Msg
         sheetItem zippedModel isCurrent =
             Ui.editableListItem
-                { onSelect = \_ -> zippedModel |> Document.commitEditedSheetNames |> SetModel
+                { onSelect =
+                    \_ ->
+                        SetModel <|
+                            if isEditing then
+                                zippedModel |> Document.commitEditedSheetNames
+
+                            else
+                                zippedModel
                 , onEdit = \_ -> EditCurrentSheetName
                 , onRemove = \_ -> zippedModel |> Document.getCurrentSheetId |> RemoveSheet
                 , onUpdate = UpdateEditedSheetName

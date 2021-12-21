@@ -108,30 +108,26 @@ toList (ZipList { before_, current_, after_ }) =
 {-| Move `current` to the first item the matches the given condition.
 -}
 select : (a -> Bool) -> ZipList a -> Maybe (ZipList a)
-select f (ZipList { before_, current_, after_ }) =
+select f zl =
     let
-        process item ( localBefore, localCurrent, localAfter ) =
-            if f item then
-                -- found the new localCurrent item.
-                ( localBefore, Just item, localAfter )
+        find i ( before, mCurrent, after ) =
+            if f i then
+                ( before, Just i, after )
 
             else
-                case localCurrent of
+                case mCurrent of
                     Just _ ->
-                        -- the new localCurrent item has been found, append to after_
-                        ( localBefore, localCurrent, L.append localAfter [ item ] )
+                        ( before, mCurrent, i :: after )
 
                     Nothing ->
-                        -- the new localCurrent item has not been found yet, append to before_
-                        ( item :: localBefore, localCurrent, localAfter )
+                        ( i :: before, mCurrent, after )
 
-        ( newBefore, maybeCurrent, newAfter ) =
-            L.foldl process
-                (L.foldl process ( [], Nothing, [] ) before_)
-                (current_ :: after_)
+        andThenMakeZipList ( before, mCurrent, after ) =
+            mCurrent |> Maybe.map (\cur -> ZipList (Data before cur (List.reverse after)))
     in
-    maybeCurrent
-        |> Maybe.map (\newCurrent -> ZipList (Data newBefore newCurrent newAfter))
+    toList zl
+        |> List.foldl find ( [], Nothing, [] )
+        |> andThenMakeZipList
 
 
 member : a -> ZipList a -> Bool

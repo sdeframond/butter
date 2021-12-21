@@ -15,10 +15,8 @@ module NamedAndOrderedStore exposing
     , getNameById
     , init
     , insert
-    , isCurrentId
     , merge
     , remove
-    , selectById
     , setCurrent
     , setName
     , toItemList
@@ -194,18 +192,11 @@ merge mergeValue inStore currentStore =
         |> mergeSubItems
 
 
-isCurrentId : Id -> NamedAndOrderedStore a -> Bool
-isCurrentId id model =
-    id == currentId model
-
-
 selectById : (a -> a) -> Id -> NamedAndOrderedStore a -> Maybe (NamedAndOrderedStore a)
 selectById onBlur selectedId store =
     let
         (Store model) =
             store |> mapCurrent onBlur
-
-        --|> commitName
     in
     ZL.select (.id >> (==) selectedId) model.items
         |> Maybe.map (\items -> { model | items = items })

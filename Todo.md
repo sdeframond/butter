@@ -20,7 +20,6 @@ Table ranges :
 Todo
 ====
 
-- Feature : Undo/redo
 - Enabler : Remove dependency to elm-sortable-table (implement my own)
     - Benefits : to store current state in local storage
     - Benefit : to facilitate having a consistent look across sheet types
@@ -50,10 +49,26 @@ Todo
 Doing
 =====
 
+- Feature : Undo/redo
+  - TODO :
+    - fix DocumentTest
+    - Implement undo/redo within sheets
+  - Architecture :
+    - Use @elm-community/undo-redo
+    - Then, when we want to implement collaboration:
+      - Send diffs between previous and new states
+      - To be able to make diffs, replace lists with dictionnary and fractional indices https://www.figma.com/blog/realtime-editing-of-ordered-sequences/#fractional-indexing
+        - watch out for the special case of ZipList: wrap together a Dict and the current key.
+
+  - Previously explored dead end: using actions
+    - Done: encode/decode actions so that the history stays when reloading
+    - Done: rename sheet.
 
 Done
 ====
 
+- 2021-12-22 : Undo/redo for sheet names
+- Enabler : Remove .edit in NamedAndOrderedStore
 - 2021-08-30 Feature : Basic concurrent editing of same same document in two tabs.
 - 2021-08-29 - Feature : PWA
 - 2021-08-29 - Feature : Multi-tab/window support
