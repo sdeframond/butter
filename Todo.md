@@ -51,7 +51,6 @@ Doing
 
 - Feature : Undo/redo
   - TODO :
-    - fix DocumentTest
     - Implement undo/redo within sheets
   - Architecture :
     - Use @elm-community/undo-redo

@@ -128,6 +128,9 @@ setStorageCmd msg ( newModel, cmds ) =
         MergeDocumentStoreMsg _ ->
             ( newModel, cmds )
 
+        DownloadDocument ->
+            ( newModel, cmds )
+
         _ ->
             ( newModel
             , Cmd.batch [ setStorage (encodeDocumentStore newModel.documents), cmds ]
