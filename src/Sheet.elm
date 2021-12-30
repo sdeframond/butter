@@ -104,8 +104,8 @@ applyContentFrom inSheet currentSheet =
         ( TableSheet inTable, TableSheet currentTable ) ->
             TableSheet (Table.applyContentFrom inTable currentTable)
 
-        ( PivotTableSheet inPivotTable, PivotTableSheet _ ) ->
-            PivotTableSheet inPivotTable
+        ( PivotTableSheet inPivotTable, PivotTableSheet currentPivotTable ) ->
+            PivotTableSheet (MyPivotTable.applyContentFrom inPivotTable currentPivotTable)
 
         ( sheet, _ ) ->
             sheet
@@ -135,15 +135,15 @@ update getSheetId msg sheet =
 
         ( PivotTableMsg ptMsg, PivotTableSheet pt ) ->
             let
-                ( newPt, cmd ) =
+                ( newPt, undoCmd, cmd ) =
                     MyPivotTable.update ptMsg pt
             in
             ( PivotTableSheet newPt
-            , ( UndoCmd.None, Cmd.map PivotTableMsg cmd )
+            , ( undoCmd, Cmd.map PivotTableMsg cmd )
             )
 
         ( _, _ ) ->
-            ( sheet, ( UndoCmd.None, Cmd.none ) )
+            ( sheet, ( UndoCmd.New, Cmd.none ) )
 
 
 type alias Context =

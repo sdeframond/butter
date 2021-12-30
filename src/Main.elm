@@ -139,7 +139,8 @@ setStorageCmd msg ( newModel, cmds ) =
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
-    case Debug.log "msg" msg of
+    -- case Debug.log "msg" msg of
+    case msg of
         KeyboardMsg kbdMsg ->
             ( handleKeyboardMsg kbdMsg model, Cmd.none )
 

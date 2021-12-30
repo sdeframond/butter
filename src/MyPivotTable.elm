@@ -1,6 +1,7 @@
 module MyPivotTable exposing
     ( Msg(..)
     , PivotTable
+    , applyContentFrom
     , decoder
     , encode
     , init
@@ -9,8 +10,8 @@ module MyPivotTable exposing
     , view
     )
 
+import Core.UndoCmd as UndoCmd
 import Css exposing (..)
-import DecodeHelpers
 import DnDList.Groups as DnDList
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as Attr
@@ -24,10 +25,10 @@ import Types
 dndConfig : DnDList.Config Draggable
 dndConfig =
     { beforeUpdate = \_ _ list -> list
-    , listen = DnDList.OnDrag
+    , listen = DnDList.OnDrop
     , operation = DnDList.Rotate
     , groups =
-        { listen = DnDList.OnDrag
+        { listen = DnDList.OnDrop
         , operation = DnDList.InsertBefore
         , comparator = \f1 f2 -> f1.group == f2.group
         , setter = \f1 f2 -> { f2 | group = f1.group }
@@ -47,7 +48,9 @@ type PivotTable
 type alias State =
     { dnd : DnDList.Model
     , table : Types.Table
-    , fields : List Draggable
+    , unusedFields : List Name
+    , rowFields : List Name
+    , columnFields : List Name
     }
 
 
@@ -57,18 +60,12 @@ type Msg
 
 init : Types.Table -> PivotTable
 init table =
-    let
-        fields =
-            (table.fields |> List.map (Just >> Draggable UnusedGroup))
-                ++ [ Draggable UnusedGroup Nothing
-                   , Draggable ColumnsGroup Nothing
-                   , Draggable RowsGroup Nothing
-                   ]
-    in
     PivotTable
         { table = table
-        , fields = fields
         , dnd = dndSystem.model
+        , unusedFields = table.fields
+        , columnFields = []
+        , rowFields = []
         }
 
 
@@ -89,17 +86,62 @@ subscriptions (PivotTable state) =
     dndSystem.subscriptions state.dnd
 
 
-update : Msg -> PivotTable -> ( PivotTable, Cmd Msg )
+draggableFields : State -> List Draggable
+draggableFields state =
+    List.concat
+        [ List.map (Just >> Draggable UnusedGroup) state.unusedFields
+        , [ Draggable UnusedGroup Nothing ]
+        , List.map (Just >> Draggable ColumnsGroup) state.columnFields
+        , [ Draggable ColumnsGroup Nothing ]
+        , List.map (Just >> Draggable RowsGroup) state.rowFields
+        , [ Draggable RowsGroup Nothing ]
+        ]
+
+
+update : Msg -> PivotTable -> ( PivotTable, UndoCmd.Cmd, Cmd Msg )
 update msg (PivotTable state) =
     case msg of
         DnDMsg dndMsg ->
             let
-                ( dnd, fields ) =
-                    dndSystem.update dndMsg state.dnd state.fields
+                draggables =
+                    draggableFields state
+
+                ( newState, undoCmd ) =
+                    dndSystem.update dndMsg state.dnd draggables
+                        |> toState
+
+                toState ( dnd, newDraggables ) =
+                    ( { state
+                        | dnd = dnd
+                        , unusedFields = filterMapByGroup UnusedGroup newDraggables
+                        , columnFields = filterMapByGroup ColumnsGroup newDraggables
+                        , rowFields = filterMapByGroup RowsGroup newDraggables
+                      }
+                    , case dndSystem.info dnd of
+                        Just _ ->
+                            UndoCmd.None
+
+                        Nothing ->
+                            UndoCmd.New
+                    )
+
+                filterMapByGroup group =
+                    List.filter (.group >> (==) group)
+                        >> List.filterMap .maybeName
             in
-            ( PivotTable { state | fields = fields, dnd = dnd }
-            , dndSystem.commands dnd
+            ( PivotTable newState
+            , undoCmd
+            , dndSystem.commands newState.dnd
             )
+
+
+applyContentFrom : PivotTable -> PivotTable -> PivotTable
+applyContentFrom (PivotTable remote) (PivotTable local) =
+    PivotTable { remote | dnd = local.dnd }
+
+
+
+-- VIEW
 
 
 view : (Msg -> msg) -> PivotTable -> Html msg
@@ -119,19 +161,14 @@ view toMsg (PivotTable state) =
 tableView : State -> Html msg
 tableView state =
     let
-        groupFields group =
-            state.fields
-                |> List.filter (.group >> (==) group)
-                |> List.filterMap .maybeName
-                |> List.map Name.get
-                |> List.map
-                    (\f ->
-                        f >> Maybe.map Types.valueOrErrorToString >> Maybe.withDefault ""
-                    )
+        getValueAsString name row =
+            Name.get name row
+                |> Maybe.map Types.valueOrErrorToString
+                |> Maybe.withDefault ""
 
         ptConfig =
-            { rowGroupFields = groupFields RowsGroup
-            , colGroupFields = groupFields ColumnsGroup
+            { rowGroupFields = state.rowFields |> List.map getValueAsString
+            , colGroupFields = state.columnFields |> List.map getValueAsString
             , aggregator = List.length
             , viewRow = H.text >> H.toUnstyled
             , viewCol = H.text >> H.toUnstyled
@@ -151,12 +188,15 @@ tableView state =
 optionsView : (Msg -> msg) -> State -> Html msg
 optionsView toMsg state =
     let
+        fields =
+            draggableFields state
+
         indexedFields =
-            state.fields |> List.indexedMap Tuple.pair
+            fields |> List.indexedMap Tuple.pair
 
         maybeDragItem =
             dndSystem.info state.dnd
-                |> Maybe.andThen (\{ dragIndex } -> state.fields |> List.drop dragIndex |> List.head)
+                |> Maybe.andThen (\{ dragIndex } -> fields |> List.drop dragIndex |> List.head)
     in
     H.div
         [ Attr.css
@@ -250,15 +290,17 @@ ghostField toMsg dnd maybeDragItem =
 -- JSON
 
 
-jsonKeys : { column : String, fields : String, group : String, name : String, row : String, table : String, unused : String }
+jsonKeys :
+    { table : String
+    , unusedFields : String
+    , columnFields : String
+    , rowFields : String
+    }
 jsonKeys =
-    { column = "column"
-    , fields = "fields"
-    , group = "group"
-    , name = "name"
-    , row = "row"
+    { unusedFields = "unusedFields"
+    , columnFields = "columnFields"
+    , rowFields = "rowFields"
     , table = "table"
-    , unused = "unused"
     }
 
 
@@ -269,49 +311,18 @@ decoder =
 
 stateDecoder : Decode.Decoder State
 stateDecoder =
-    Decode.map2 (State dndSystem.model)
+    Decode.map4 (State dndSystem.model)
         (Decode.field jsonKeys.table Types.tableDecoder)
-        (Decode.field jsonKeys.fields <| Decode.list draggableDecoder)
-
-
-draggableDecoder : Decode.Decoder Draggable
-draggableDecoder =
-    let
-        groups =
-            [ ( jsonKeys.row, Decode.succeed RowsGroup )
-            , ( jsonKeys.column, Decode.succeed ColumnsGroup )
-            , ( jsonKeys.unused, Decode.succeed UnusedGroup )
-            ]
-    in
-    Decode.map2 Draggable
-        (Decode.field jsonKeys.group (Decode.string |> DecodeHelpers.switch "Invalid group" groups))
-        (Decode.field jsonKeys.name <| Decode.nullable Name.decoder)
+        (Decode.field jsonKeys.unusedFields <| Decode.list Name.decoder)
+        (Decode.field jsonKeys.columnFields <| Decode.list Name.decoder)
+        (Decode.field jsonKeys.rowFields <| Decode.list Name.decoder)
 
 
 encode : PivotTable -> Encode.Value
 encode (PivotTable state) =
     Encode.object
         [ ( jsonKeys.table, Types.encodeTable state.table )
-        , ( jsonKeys.fields, Encode.list encodeDraggable state.fields )
-        ]
-
-
-encodeDraggable : Draggable -> Encode.Value
-encodeDraggable draggable =
-    let
-        encodeGroup group =
-            Encode.string <|
-                case group of
-                    RowsGroup ->
-                        jsonKeys.row
-
-                    ColumnsGroup ->
-                        jsonKeys.column
-
-                    UnusedGroup ->
-                        jsonKeys.unused
-    in
-    Encode.object
-        [ ( jsonKeys.group, encodeGroup draggable.group )
-        , ( jsonKeys.name, draggable.maybeName |> Maybe.map Name.encode |> Maybe.withDefault Encode.null )
+        , ( jsonKeys.unusedFields, Encode.list Name.encode state.unusedFields )
+        , ( jsonKeys.columnFields, Encode.list Name.encode state.columnFields )
+        , ( jsonKeys.rowFields, Encode.list Name.encode state.rowFields )
         ]

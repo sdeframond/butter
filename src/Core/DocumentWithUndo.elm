@@ -71,12 +71,16 @@ redo =
 
 new : Document.Model -> UndoList Document.Model -> UndoList Document.Model
 new doc undoList =
-    if undoList.present == Document.applyContentFrom doc undoList.present then
-        { undoList | present = doc }
-
-    else
+    let
+        contentHasChanged =
+            undoList.present /= Document.applyContentFrom doc undoList.present
+    in
+    if contentHasChanged then
         UndoList.new doc
             (UndoList.mapPresent Document.cancelEdits undoList)
+
+    else
+        { undoList | present = doc }
 
 
 decoder : Decoder Model
