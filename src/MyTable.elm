@@ -10,6 +10,7 @@ module MyTable exposing
     , view
     )
 
+import Core.UndoCmd as UndoCmd
 import Css exposing (..)
 import DecodeHelpers
 import Formula exposing (Formula)
@@ -124,22 +125,23 @@ type Msg
     | OnInputNewFieldFormula String
 
 
-update : (Name -> Maybe Types.SheetId) -> Msg -> Table -> Table
+update : (Name -> Maybe Types.SheetId) -> Msg -> Table -> ( Table, UndoCmd.Cmd )
 update getSheetId msg (Table data) =
-    Table <| updateData getSheetId msg data
+    updateData getSheetId msg data
+        |> Tuple.mapFirst Table
 
 
-updateData : (Name -> Maybe Types.SheetId) -> Msg -> TableData -> TableData
+updateData : (Name -> Maybe Types.SheetId) -> Msg -> TableData -> ( TableData, UndoCmd.Cmd )
 updateData getSheetId msg data =
     let
-        commit : TableData -> TableData
+        commit : TableData -> ( TableData, UndoCmd.Cmd )
         commit d =
             case d.editedCell of
                 Nothing ->
-                    d
+                    ( d, UndoCmd.None )
 
                 Just ( ( rowId, fieldName ), content ) ->
-                    { d
+                    ( { d
                         | editedCell = Nothing
                         , rows =
                             L.map
@@ -151,7 +153,9 @@ updateData getSheetId msg data =
                                         row
                                 )
                                 d.rows
-                    }
+                      }
+                    , UndoCmd.New
+                    )
 
         setNewFieldType type_ d =
             { d | fieldForm = setFieldType type_ data.fieldForm }
@@ -161,7 +165,7 @@ updateData getSheetId msg data =
     in
     case msg of
         SetTableState state ->
-            { data | state = state }
+            ( { data | state = state }, UndoCmd.New )
 
         UpdateNewRowField fieldName fieldValue ->
             let
@@ -172,7 +176,7 @@ updateData getSheetId msg data =
                     else
                         field
             in
-            { data | fields = L.map updateField data.fields }
+            ( { data | fields = L.map updateField data.fields }, UndoCmd.None )
 
         KeyDown code ->
             let
@@ -189,29 +193,31 @@ updateData getSheetId msg data =
             in
             if code == 13 then
                 -- Enter key, insert a new row
-                { data
+                ( { data
                     | fields = L.map resetEdit data.fields
                     , rows = editsToRow :: data.rows
                     , nextId = PositiveInt.next data.nextId
-                }
+                  }
+                , UndoCmd.New
+                )
 
             else
-                data
+                ( data, UndoCmd.None )
 
         EditCell rowId fieldName content ->
             let
-                commited =
+                ( commited, undoCmd ) =
                     commit data
             in
-            { commited | editedCell = Just ( ( rowId, fieldName ), content ) }
+            ( { commited | editedCell = Just ( ( rowId, fieldName ), content ) }, undoCmd )
 
         UpdateEditedCell content ->
             case data.editedCell of
                 Nothing ->
-                    data
+                    ( data, UndoCmd.None )
 
                 Just ( cellRef, _ ) ->
-                    { data | editedCell = Just ( cellRef, content ) }
+                    ( { data | editedCell = Just ( cellRef, content ) }, UndoCmd.None )
 
         OnClickAddFieldBtn ->
             formToField data.fieldForm
@@ -223,34 +229,39 @@ updateData getSheetId msg data =
                         }
                     )
                 |> Maybe.withDefault data
+                |> (\d -> ( d, UndoCmd.New ))
 
         OnInputNewFieldName input ->
             let
                 form =
                     data.fieldForm
             in
-            { data | fieldForm = { form | name = Name.fromString input } }
+            ( { data | fieldForm = { form | name = Name.fromString input } }, UndoCmd.None )
 
         OnClickRemoveColumnBtn nameStr ->
-            { data
+            ( { data
                 | fields = L.filter (.name >> Name.matchesString nameStr >> not) data.fields
                 , rows = L.map (\r -> { r | data = Name.removeString nameStr r.data }) data.rows
-            }
+              }
+            , UndoCmd.New
+            )
 
         OnClickNewFieldTypeBtn ->
             commit data
-                |> (setNewFieldType <|
+                |> Tuple.mapFirst
+                    (setNewFieldType <|
                         case data.fieldForm.fieldType of
                             DataField _ ->
                                 FormulaField (Formula.fromSource getSheetId "")
 
                             FormulaField _ ->
                                 DataField StringType
-                   )
+                    )
 
         OnClickNewFieldDataTypeBtn ->
             commit data
-                |> (case data.fieldForm.fieldType of
+                |> Tuple.mapFirst
+                    (case data.fieldForm.fieldType of
                         FormulaField _ ->
                             identity
 
@@ -262,10 +273,10 @@ updateData getSheetId msg data =
 
                                     StringType ->
                                         DataField IntType
-                   )
+                    )
 
         OnInputNewFieldFormula input ->
-            setNewFieldType (FormulaField (Formula.fromSource getSheetId input)) data
+            ( setNewFieldType (FormulaField (Formula.fromSource getSheetId input)) data, UndoCmd.None )
 
 
 

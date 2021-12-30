@@ -130,9 +130,8 @@ update getSheetId msg sheet =
             )
 
         ( TableMsg tableMsg, TableSheet table ) ->
-            ( TableSheet <| Table.update getSheetId tableMsg table
-            , ( UndoCmd.None, Cmd.none )
-            )
+            Table.update getSheetId tableMsg table
+                |> Tuple.mapBoth TableSheet (\undoCmd -> ( undoCmd, Cmd.none ))
 
         ( PivotTableMsg ptMsg, PivotTableSheet pt ) ->
             let
