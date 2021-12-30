@@ -1,11 +1,11 @@
 module MyTable exposing
     ( Msg(..)
     , Table
+    , applyContentFrom
     , decoder
     , empty
     , encode
     , eval
-    , merge
     , update
     , view
     )
@@ -101,8 +101,8 @@ type alias Row =
     { id : PositiveInt, data : Name.Store String }
 
 
-merge : Table -> Table -> Table
-merge (Table inData) (Table currentData) =
+applyContentFrom : Table -> Table -> Table
+applyContentFrom (Table inData) (Table currentData) =
     Table { inData | fieldForm = currentData.fieldForm }
 
 

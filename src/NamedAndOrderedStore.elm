@@ -1,6 +1,7 @@
 module NamedAndOrderedStore exposing
     ( Id
     , NamedAndOrderedStore
+    , applyContentFrom
     , cancelEdits
     , commitEdits
     , current
@@ -15,7 +16,6 @@ module NamedAndOrderedStore exposing
     , getNameById
     , init
     , insert
-    , merge
     , remove
     , setCurrent
     , setName
@@ -175,20 +175,20 @@ zipMap f (Store data) =
     ZL.zipMap go data.items
 
 
-merge : (a -> a -> a) -> NamedAndOrderedStore a -> NamedAndOrderedStore a -> NamedAndOrderedStore a
-merge mergeValue inStore currentStore =
+applyContentFrom : (a -> a -> a) -> NamedAndOrderedStore a -> NamedAndOrderedStore a -> NamedAndOrderedStore a
+applyContentFrom mergeValue remote origin =
     let
         mergeSubItems (Store data) =
             Store { data | items = ZL.map mergeItem data.items }
 
         mergeItem item =
-            getById item.id currentStore
+            getById item.id origin
                 |> Maybe.map (\value -> { item | value = mergeValue item.value value })
                 |> Maybe.withDefault item
     in
-    inStore
-        |> selectById identity (currentId currentStore)
-        |> Maybe.withDefault inStore
+    remote
+        |> selectById identity (currentId origin)
+        |> Maybe.withDefault remote
         |> mergeSubItems
 
 

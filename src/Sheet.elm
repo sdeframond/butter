@@ -6,6 +6,7 @@ module Sheet exposing
     , Params
     , Sheet
     , allParams
+    , applyContentFrom
     , decoder
     , encode
     , eval
@@ -13,7 +14,6 @@ module Sheet exposing
     , initGrid
     , initPivotTable
     , initTable
-    , merge
     , subscriptions
     , update
     , view
@@ -95,14 +95,14 @@ subscriptions sheet =
             Sub.none
 
 
-merge : Sheet -> Sheet -> Sheet
-merge inSheet currentSheet =
+applyContentFrom : Sheet -> Sheet -> Sheet
+applyContentFrom inSheet currentSheet =
     case ( inSheet, currentSheet ) of
         ( GridSheet inGrid, GridSheet currentGrid ) ->
-            GridSheet (Grid.merge inGrid currentGrid)
+            GridSheet (Grid.applyContentFrom inGrid currentGrid)
 
         ( TableSheet inTable, TableSheet currentTable ) ->
-            TableSheet (Table.merge inTable currentTable)
+            TableSheet (Table.applyContentFrom inTable currentTable)
 
         ( PivotTableSheet inPivotTable, PivotTableSheet _ ) ->
             PivotTableSheet inPivotTable

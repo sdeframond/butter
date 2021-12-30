@@ -1,5 +1,6 @@
 module Core.DocumentWithUndo exposing
     ( Model
+    , applyContentFrom
     , commitEditedSheetNames
     , decoder
     , editCurrentSheetName
@@ -13,7 +14,6 @@ module Core.DocumentWithUndo exposing
     , getSheetNameById
     , init
     , insertSheet
-    , merge
     , redo
     , removeSheet
     , toBytes
@@ -44,9 +44,9 @@ init =
     UndoList.fresh Document.init
 
 
-merge : Model -> Model -> Model
-merge newList { present } =
-    UndoList.map (\d -> Document.merge d present) newList
+applyContentFrom : Model -> Model -> Model
+applyContentFrom remote origin =
+    UndoList.map (\d -> Document.applyContentFrom d origin.present) remote
 
 
 toBytes : Model -> Bytes
@@ -71,7 +71,7 @@ redo =
 
 new : Document.Model -> UndoList Document.Model -> UndoList Document.Model
 new doc undoList =
-    if undoList.present == Document.merge doc undoList.present then
+    if undoList.present == Document.applyContentFrom doc undoList.present then
         { undoList | present = doc }
 
     else

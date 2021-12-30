@@ -151,8 +151,9 @@ update msg model =
                 Visible ->
                     ( model, Cmd.none )
 
-        MergeDocumentStoreMsg newStore ->
-            ( Store.merge Document.merge newStore model.documents
+        MergeDocumentStoreMsg remoteStore ->
+            ( model.documents
+                |> Store.applyContentFrom Document.applyContentFrom remoteStore
                 |> setDocumentStore model
             , Cmd.none
             )

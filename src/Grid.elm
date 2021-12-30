@@ -3,11 +3,11 @@ module Grid exposing
     , Context
     , Grid
     , Msg(..)
+    , applyContentFrom
     , decoder
     , encode
     , evalCell
     , init
-    , merge
     , update
     , view
     )
@@ -69,8 +69,8 @@ init =
     Grid { editState = Nothing, cells = Name.empty }
 
 
-merge : Grid -> Grid -> Grid
-merge (Grid inData) (Grid currentData) =
+applyContentFrom : Grid -> Grid -> Grid
+applyContentFrom (Grid inData) (Grid currentData) =
     Grid { inData | editState = currentData.editState }
 
 

@@ -1,11 +1,11 @@
 module DocumentView exposing
     ( Model
     , Msg
+    , applyContentFrom
     , decoder
     , encode
     , fromBytes
     , init
-    , merge
     , redo
     , subscriptions
     , toBytes
@@ -37,9 +37,9 @@ init =
     Document.init
 
 
-merge : Model -> Model -> Model
-merge =
-    Document.merge
+applyContentFrom : Model -> Model -> Model
+applyContentFrom =
+    Document.applyContentFrom
 
 
 toBytes : Model -> Bytes

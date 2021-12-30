@@ -1,5 +1,6 @@
 module Core.Document exposing
     ( Model
+    , applyContentFrom
     , cancelEdits
     , commitEditedSheetNames
     , decoder
@@ -14,7 +15,6 @@ module Core.Document exposing
     , getSheetNameById
     , init
     , insertSheet
-    , merge
     , removeSheet
     , toBytes
     , updateCurrentEditedSheetName
@@ -68,12 +68,12 @@ cancelEdits (Model data) =
     Model { data | store = Store.cancelEdits data.store }
 
 
-merge : Model -> Model -> Model
-merge (Model inData) (Model currentData) =
+applyContentFrom : Model -> Model -> Model
+applyContentFrom (Model remote) (Model origin) =
     Model
-        { inData
+        { remote
             | store =
-                Store.merge Sheet.merge inData.store currentData.store
+                Store.applyContentFrom Sheet.applyContentFrom remote.store origin.store
         }
 
 

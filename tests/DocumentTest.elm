@@ -61,8 +61,8 @@ suite =
                     |> Expect.equal (Just "toto")
         , todo ".eval"
         , todo ".insertSheet"
-        , todo ".merge takes the local document's view"
-        , todo ".merge takes the remote document's content"
+        , todo ".applyContentFrom takes the local document's view"
+        , todo ".applyContentFrom takes the remote document's content"
         , todo ".removeSheet"
         , todo ".updateCurrentSheet"
         , todo ".zipMapSheets"
