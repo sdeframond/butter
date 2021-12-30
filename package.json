@@ -9,7 +9,6 @@
     "test-watch": "npx elm-test-rs --watch --fuzz 10"
   },
   "devDependencies": {
-    "elm": "*",
     "elm-live": "^4.0.2",
     "elm-tooling": "^1.7.0"
   }
