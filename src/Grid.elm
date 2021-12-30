@@ -3,7 +3,6 @@ module Grid exposing
     , Context
     , Grid
     , Msg(..)
-    , commit
     , decoder
     , encode
     , evalCell
@@ -13,6 +12,7 @@ module Grid exposing
     , view
     )
 
+import Core.UndoCmd as UndoCmd
 import Css exposing (..)
 import DecodeHelpers
 import Formula exposing (Formula)
@@ -140,7 +140,7 @@ type Msg
     | OnClickCellDataTypeBtn
 
 
-update : (Name -> Maybe Types.SheetId) -> Msg -> Grid -> Grid
+update : (Name -> Maybe Types.SheetId) -> Msg -> Grid -> ( Grid, UndoCmd.Cmd )
 update getSheetId msg (Grid data) =
     let
         mapEditedCell fn =
@@ -159,10 +159,10 @@ update getSheetId msg (Grid data) =
                                 DataCell dataType _ ->
                                     DataCell dataType input
                     in
-                    Grid { data | editState = Just ( name, newCell ) }
+                    ( Grid { data | editState = Just ( name, newCell ) }, UndoCmd.None )
 
                 Nothing ->
-                    Grid data
+                    ( Grid data, UndoCmd.None )
 
         StartEditing name ->
             let
@@ -173,7 +173,7 @@ update getSheetId msg (Grid data) =
                     getCell name data
                         |> Result.withDefault defaultCell
             in
-            Grid { newData | editState = Just ( name, newCell ) }
+            ( Grid { newData | editState = Just ( name, newCell ) }, UndoCmd.New )
 
         OnClickCellTypeBtn ->
             let
@@ -185,7 +185,7 @@ update getSheetId msg (Grid data) =
                         DataCell _ input ->
                             FormulaCell (Formula.fromSource getSheetId input)
             in
-            Grid { data | editState = mapEditedCell switchCellType data }
+            ( Grid { data | editState = mapEditedCell switchCellType data }, UndoCmd.None )
 
         OnClickCellDataTypeBtn ->
             let
@@ -205,16 +205,11 @@ update getSheetId msg (Grid data) =
                         Types.StringType ->
                             Types.IntType
             in
-            Grid { data | editState = mapEditedCell (mapDataType switchDataType) data }
+            ( Grid { data | editState = mapEditedCell (mapDataType switchDataType) data }, UndoCmd.None )
 
 
 
 -- COMMIT
-
-
-commit : Grid -> Grid
-commit (Grid data) =
-    commitData data |> Grid
 
 
 commitData : GridData -> GridData

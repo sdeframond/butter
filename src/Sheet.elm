@@ -6,7 +6,6 @@ module Sheet exposing
     , Params
     , Sheet
     , allParams
-    , commitEdit
     , decoder
     , encode
     , eval
@@ -20,6 +19,7 @@ module Sheet exposing
     , view
     )
 
+import Core.UndoCmd as UndoCmd
 import Grid exposing (Grid)
 import Html.Styled exposing (Html)
 import Json.Decode as Decode
@@ -117,17 +117,21 @@ type Msg
     | PivotTableMsg MyPivotTable.Msg
 
 
-update : (Name -> Maybe Types.SheetId) -> Msg -> Sheet -> ( Sheet, Cmd Msg )
+update : (Name -> Maybe Types.SheetId) -> Msg -> Sheet -> ( Sheet, ( UndoCmd.Cmd, Cmd Msg ) )
 update getSheetId msg sheet =
     case ( msg, sheet ) of
         ( GridMsg gridMsg, GridSheet grid ) ->
-            ( GridSheet <| Grid.update getSheetId gridMsg grid
-            , Cmd.none
+            let
+                ( newGrid, undoCmd ) =
+                    Grid.update getSheetId gridMsg grid
+            in
+            ( GridSheet newGrid
+            , ( undoCmd, Cmd.none )
             )
 
         ( TableMsg tableMsg, TableSheet table ) ->
             ( TableSheet <| Table.update getSheetId tableMsg table
-            , Cmd.none
+            , ( UndoCmd.None, Cmd.none )
             )
 
         ( PivotTableMsg ptMsg, PivotTableSheet pt ) ->
@@ -136,21 +140,11 @@ update getSheetId msg sheet =
                     MyPivotTable.update ptMsg pt
             in
             ( PivotTableSheet newPt
-            , Cmd.map PivotTableMsg cmd
+            , ( UndoCmd.None, Cmd.map PivotTableMsg cmd )
             )
 
         ( _, _ ) ->
-            ( sheet, Cmd.none )
-
-
-commitEdit : Sheet -> Sheet
-commitEdit sheet =
-    case sheet of
-        GridSheet grid ->
-            GridSheet (Grid.commit grid)
-
-        _ ->
-            sheet
+            ( sheet, ( UndoCmd.None, Cmd.none ) )
 
 
 type alias Context =

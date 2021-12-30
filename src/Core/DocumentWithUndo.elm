@@ -25,6 +25,7 @@ module Core.DocumentWithUndo exposing
 
 import Bytes exposing (Bytes)
 import Core.Document as Document
+import Core.UndoCmd as UndoCmd
 import Json.Decode exposing (Decoder, Value)
 import Name exposing (Name)
 import Sheet
@@ -70,8 +71,12 @@ redo =
 
 new : Document.Model -> UndoList Document.Model -> UndoList Document.Model
 new doc undoList =
-    UndoList.new doc
-        (UndoList.mapPresent Document.cancelEdits undoList)
+    if undoList.present == Document.merge doc undoList.present then
+        { undoList | present = doc }
+
+    else
+        UndoList.new doc
+            (UndoList.mapPresent Document.cancelEdits undoList)
 
 
 decoder : Decoder Model
@@ -89,13 +94,18 @@ getCurrentSheet =
     .present >> Document.getCurrentSheet
 
 
-updateCurrentSheet : ((Name -> Maybe Types.SheetId) -> Sheet.Sheet -> ( Sheet.Sheet, cmd )) -> Model -> ( Model, cmd )
+updateCurrentSheet : ((Name -> Maybe Types.SheetId) -> Sheet.Sheet -> ( Sheet.Sheet, ( UndoCmd.Cmd, cmd ) )) -> Model -> ( Model, cmd )
 updateCurrentSheet func model =
     let
-        ( present, cmd ) =
+        ( present, ( undoCmd, sheetCmd ) ) =
             Document.updateCurrentSheet func model.present
     in
-    ( { model | present = present }, cmd )
+    case undoCmd of
+        UndoCmd.New ->
+            ( new present model, sheetCmd )
+
+        UndoCmd.None ->
+            ( { model | present = present }, sheetCmd )
 
 
 insertSheet : Sheet.Params -> Model -> Model
