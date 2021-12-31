@@ -14,6 +14,7 @@ module Core.DocumentWithUndo exposing
     , getSheetNameById
     , init
     , insertSheet
+    , past
     , redo
     , removeSheet
     , toBytes
@@ -27,6 +28,7 @@ import Bytes exposing (Bytes)
 import Core.Document as Document
 import Core.UndoCmd as UndoCmd
 import Json.Decode exposing (Decoder, Value)
+import Json.Encode
 import Name exposing (Name)
 import Sheet
 import Types
@@ -35,148 +37,175 @@ import UndoList.Decode
 import UndoList.Encode
 
 
-type alias Model =
-    UndoList Document.Model
+type Model
+    = Model Data
+
+
+type alias Data =
+    { undoList : UndoList Document.Model
+    , workingCopy : Document.Model
+    }
 
 
 init : Model
 init =
-    UndoList.fresh Document.init
+    Model
+        { undoList = UndoList.fresh Document.init
+        , workingCopy = Document.init
+        }
 
 
 applyContentFrom : Model -> Model -> Model
-applyContentFrom remote origin =
-    UndoList.map (\d -> Document.applyContentFrom d origin.present) remote
+applyContentFrom (Model remote) (Model origin) =
+    Model { remote | workingCopy = Document.applyContentFrom remote.workingCopy origin.workingCopy }
 
 
 toBytes : Model -> Bytes
-toBytes { present } =
-    Document.toBytes present
+toBytes (Model model) =
+    Document.toBytes model.workingCopy
 
 
 fromBytes : Bytes -> Maybe Model
 fromBytes =
-    Document.fromBytes >> Maybe.map UndoList.fresh
+    Document.fromBytes >> Maybe.map (\doc -> Model { undoList = UndoList.fresh doc, workingCopy = doc })
 
 
 undo : Model -> Model
-undo =
-    UndoList.undo
+undo (Model model) =
+    UndoList.undo model.undoList
+        |> (\undoList -> Model { undoList = undoList, workingCopy = undoList.present })
 
 
 redo : Model -> Model
-redo =
-    UndoList.redo
+redo (Model model) =
+    UndoList.redo model.undoList
+        |> (\undoList -> Model { undoList = undoList, workingCopy = undoList.present })
 
 
-new : Document.Model -> UndoList Document.Model -> UndoList Document.Model
-new doc undoList =
+past : Model -> List Document.Model
+past (Model data) =
+    data.undoList.past
+
+
+commitDocToUndoList : Document.Model -> Data -> Model
+commitDocToUndoList doc model =
     let
         contentHasChanged =
-            undoList.present /= Document.applyContentFrom doc undoList.present
+            model.undoList.present /= Document.applyContentFrom doc model.undoList.present
     in
     if contentHasChanged then
-        UndoList.new doc
-            (UndoList.mapPresent Document.cancelEdits undoList)
+        Model
+            { undoList = UndoList.new doc model.undoList
+            , workingCopy = doc
+            }
 
     else
-        { undoList | present = doc }
+        Model { model | workingCopy = doc }
 
 
-decoder : Decoder Model
-decoder =
-    UndoList.Decode.undolist Document.decoder
-
-
-encode : Model -> Value
-encode =
-    UndoList.map Document.encode >> UndoList.Encode.undolist
+commitWorkingCopy : Model -> Model
+commitWorkingCopy (Model data) =
+    commitDocToUndoList data.workingCopy data
 
 
 getCurrentSheet : Model -> Sheet.Sheet
-getCurrentSheet =
-    .present >> Document.getCurrentSheet
+getCurrentSheet (Model model) =
+    model.workingCopy |> Document.getCurrentSheet
 
 
 updateCurrentSheet : ((Name -> Maybe Types.SheetId) -> Sheet.Sheet -> ( Sheet.Sheet, ( UndoCmd.Cmd, cmd ) )) -> Model -> ( Model, cmd )
-updateCurrentSheet func model =
+updateCurrentSheet func (Model model) =
     let
-        ( present, ( undoCmd, sheetCmd ) ) =
-            Document.updateCurrentSheet func model.present
+        ( newDoc, ( undoCmd, sheetCmd ) ) =
+            Document.updateCurrentSheet func model.workingCopy
     in
     case undoCmd of
         UndoCmd.New ->
-            ( new present model, sheetCmd )
+            ( commitDocToUndoList newDoc model, sheetCmd )
 
         UndoCmd.None ->
-            ( { model | present = present }, sheetCmd )
+            ( Model { model | workingCopy = newDoc }, sheetCmd )
 
 
 insertSheet : Sheet.Params -> Model -> Model
 insertSheet params model =
-    new (Document.insertSheet params model.present) model
+    model |> mapWorkingCopy (Document.insertSheet params) |> commitWorkingCopy
 
 
 removeSheet : Types.SheetId -> Model -> Model
-removeSheet sheetId model =
-    new (Document.removeSheet sheetId model.present) model
+removeSheet sheetId (Model model) =
+    commitDocToUndoList (Document.removeSheet sheetId model.workingCopy) model
+
+
+mapWorkingCopy : (Document.Model -> Document.Model) -> Model -> Model
+mapWorkingCopy func (Model data) =
+    Model { data | workingCopy = func data.workingCopy }
 
 
 editCurrentSheetName : Model -> Model
-editCurrentSheetName =
-    UndoList.mapPresent Document.editCurrentSheetName
+editCurrentSheetName model =
+    mapWorkingCopy Document.editCurrentSheetName model
 
 
 commitEditedSheetNames : Model -> Model
-commitEditedSheetNames model =
+commitEditedSheetNames (Model model) =
     let
-        cancelled =
-            UndoList.mapPresent Document.cancelEdits model
-
         committedDoc =
-            Document.commitEditedSheetNames model.present
+            Document.commitEditedSheetNames model.workingCopy
     in
-    if committedDoc == cancelled.present then
-        cancelled
-
-    else
-        new committedDoc cancelled
+    commitDocToUndoList committedDoc model
 
 
 updateCurrentEditedSheetName : String -> Model -> Model
 updateCurrentEditedSheetName str model =
-    UndoList.mapPresent (Document.updateCurrentEditedSheetName str) model
+    mapWorkingCopy (Document.updateCurrentEditedSheetName str) model
 
 
 getCurrentSheetEditStatus : Model -> Maybe String
-getCurrentSheetEditStatus { present } =
-    Document.getCurrentSheetEditStatus present
+getCurrentSheetEditStatus (Model { workingCopy }) =
+    Document.getCurrentSheetEditStatus workingCopy
 
 
 getSheetNameById : Types.SheetId -> Model -> Maybe Name
-getSheetNameById id { present } =
-    Document.getSheetNameById id present
+getSheetNameById id (Model { workingCopy }) =
+    Document.getSheetNameById id workingCopy
 
 
 getCurrentSheetId : Model -> Types.SheetId
-getCurrentSheetId { present } =
-    Document.getCurrentSheetId present
+getCurrentSheetId (Model { workingCopy }) =
+    Document.getCurrentSheetId workingCopy
 
 
 getCurrentSheetName : Model -> Name
-getCurrentSheetName { present } =
-    Document.getCurrentSheetName present
+getCurrentSheetName (Model { workingCopy }) =
+    Document.getCurrentSheetName workingCopy
 
 
 eval : Model -> Types.LocatedName -> List Types.LocatedName -> Types.ValueOrError
-eval { present } =
-    Document.eval present
+eval (Model { workingCopy }) =
+    Document.eval workingCopy
 
 
 zipMapSheets : (Model -> Bool -> a) -> Model -> List a
-zipMapSheets f model =
+zipMapSheets f (Model model) =
     let
-        wrapped present isCurrent =
-            f { model | present = present } isCurrent
+        wrapped workingCopy isCurrent =
+            f (Model { model | workingCopy = workingCopy }) isCurrent
     in
-    Document.zipMapSheets wrapped model.present
+    Document.zipMapSheets wrapped model.workingCopy
+
+
+decoder : Decoder Model
+decoder =
+    Json.Decode.map2 Data
+        (Json.Decode.field "undoList" <| UndoList.Decode.undolist Document.decoder)
+        (Json.Decode.field "workingCopy" <| Document.decoder)
+        |> Json.Decode.map Model
+
+
+encode : Model -> Value
+encode (Model model) =
+    Json.Encode.object
+        [ ( "undoList", model.undoList |> UndoList.map Document.encode |> UndoList.Encode.undolist )
+        , ( "workingCopy", Document.encode model.workingCopy )
+        ]

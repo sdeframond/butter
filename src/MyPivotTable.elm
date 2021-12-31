@@ -314,8 +314,8 @@ stateDecoder =
     Decode.map4 (State dndSystem.model)
         (Decode.field jsonKeys.table Types.tableDecoder)
         (Decode.field jsonKeys.unusedFields <| Decode.list Name.decoder)
-        (Decode.field jsonKeys.columnFields <| Decode.list Name.decoder)
         (Decode.field jsonKeys.rowFields <| Decode.list Name.decoder)
+        (Decode.field jsonKeys.columnFields <| Decode.list Name.decoder)
 
 
 encode : PivotTable -> Encode.Value
@@ -323,6 +323,6 @@ encode (PivotTable state) =
     Encode.object
         [ ( jsonKeys.table, Types.encodeTable state.table )
         , ( jsonKeys.unusedFields, Encode.list Name.encode state.unusedFields )
-        , ( jsonKeys.columnFields, Encode.list Name.encode state.columnFields )
         , ( jsonKeys.rowFields, Encode.list Name.encode state.rowFields )
+        , ( jsonKeys.columnFields, Encode.list Name.encode state.columnFields )
         ]

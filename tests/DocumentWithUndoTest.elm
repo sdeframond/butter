@@ -10,8 +10,8 @@ import Test exposing (..)
 expectPastToChangeBy : Int -> (Document.Model -> Document.Model) -> Document.Model -> Expect.Expectation
 expectPastToChangeBy delta func doc =
     func doc
-        |> (.past >> List.length)
-        |> Expect.equal (List.length doc.past + delta)
+        |> (Document.past >> List.length)
+        |> Expect.equal (List.length (Document.past doc) + delta)
 
 
 suite : Test
