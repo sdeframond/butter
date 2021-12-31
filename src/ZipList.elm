@@ -1,11 +1,11 @@
 module ZipList exposing
     ( ZipList
-    , append
     , current
     , decoder
     , encode
     , filter
     , get
+    , insertAfter
     , map
     , mapState
     , member
@@ -137,9 +137,9 @@ member a (ZipList { before_, current_, after_ }) =
         || (a == current_)
 
 
-append : List a -> ZipList a -> ZipList a
-append a (ZipList data) =
-    ZipList { data | after_ = L.append data.after_ a }
+insertAfter : a -> ZipList a -> ZipList a
+insertAfter a (ZipList data) =
+    ZipList (Data (data.current_ :: data.before_) a data.after_)
 
 
 filter : (a -> Bool) -> ZipList a -> Maybe (ZipList a)

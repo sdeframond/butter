@@ -61,11 +61,11 @@ suite =
             \_ ->
                 Store.init (Name.sanitize "first") 1
                     |> Store.insert (Name.sanitize "second") 2
-                    |> Store.updateCurrentEditedName "second"
+                    |> Store.updateCurrentEditedName "first"
                     |> Store.commitEdits
                     |> Store.currentName
                     |> Name.toString
-                    |> Expect.equal "first"
+                    |> Expect.equal "second"
         , test "commitEdits cancels edition when the name already exists" <|
             \_ ->
                 Store.init (Name.sanitize "first") 1

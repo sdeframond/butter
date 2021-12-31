@@ -244,7 +244,7 @@ insert name item (Store model) =
     in
     Store <|
         { model
-            | items = ZL.append [ { id = model.nextId, name = finalName, value = item, editStatus = Nothing } ] model.items
+            | items = ZL.insertAfter { id = model.nextId, name = finalName, value = item, editStatus = Nothing } model.items
             , nextId = Id.next model.nextId
             , nameIndex = Name.insert finalName model.nextId model.nameIndex
         }
