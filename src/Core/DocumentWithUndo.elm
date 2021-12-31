@@ -82,6 +82,9 @@ redo (Model model) =
         |> (\undoList -> Model { undoList = undoList, workingCopy = undoList.present })
 
 
+{-| Used for tests only.
+TODO : find a better way to test ?
+-}
 past : Model -> List Document.Model
 past (Model data) =
     data.undoList.past

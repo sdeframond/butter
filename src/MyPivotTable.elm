@@ -25,10 +25,10 @@ import Types
 dndConfig : DnDList.Config Draggable
 dndConfig =
     { beforeUpdate = \_ _ list -> list
-    , listen = DnDList.OnDrop
+    , listen = DnDList.OnDrag
     , operation = DnDList.Rotate
     , groups =
-        { listen = DnDList.OnDrop
+        { listen = DnDList.OnDrag
         , operation = DnDList.InsertBefore
         , comparator = \f1 f2 -> f1.group == f2.group
         , setter = \f1 f2 -> { f2 | group = f1.group }
