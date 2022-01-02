@@ -1,12 +1,12 @@
 module FormulaTest exposing (..)
 
+import Core.Formula as Formula
+import Core.Name as Name exposing (Name)
+import Core.PositiveInt as PositiveInt
+import Core.Types as Types exposing (Value(..))
 import Expect
-import Formula
 import Helpers exposing (testCollection)
-import Name exposing (Name)
-import PositiveInt
 import Test exposing (..)
-import Types exposing (Value(..))
 
 
 suite : Test

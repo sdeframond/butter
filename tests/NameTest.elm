@@ -1,10 +1,10 @@
 module NameTest exposing (..)
 
+import Core.Name as Name
+import Core.PositiveInt as PositiveInt
 import Expect
 import Fuzz
 import Helpers exposing (testCollection)
-import Name
-import PositiveInt
 import Test exposing (..)
 
 

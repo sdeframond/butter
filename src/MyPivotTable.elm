@@ -10,6 +10,8 @@ module MyPivotTable exposing
     , view
     )
 
+import Core.Name as Name exposing (Name)
+import Core.Types as Types
 import Core.UndoCmd as UndoCmd
 import Css exposing (..)
 import DnDList.Groups as DnDList
@@ -17,9 +19,7 @@ import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as Attr
 import Json.Decode as Decode
 import Json.Encode as Encode
-import Name exposing (Name)
 import PivotTable as PT
-import Types
 
 
 dndConfig : DnDList.Config Draggable

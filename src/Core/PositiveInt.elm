@@ -1,4 +1,4 @@
-module PositiveInt exposing
+module Core.PositiveInt exposing
     ( PositiveInt
     , add
     , decoder

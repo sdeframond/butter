@@ -19,6 +19,8 @@ module Sheet exposing
     , view
     )
 
+import Core.Name exposing (Name)
+import Core.Types as Types
 import Core.UndoCmd as UndoCmd
 import Grid exposing (Grid)
 import Html.Styled exposing (Html)
@@ -26,8 +28,6 @@ import Json.Decode as Decode
 import Json.Encode as Encode
 import MyPivotTable exposing (PivotTable)
 import MyTable as Table exposing (Table)
-import Name exposing (Name)
-import Types
 
 
 type Sheet

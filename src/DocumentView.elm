@@ -16,15 +16,15 @@ module DocumentView exposing
 
 import Bytes exposing (Bytes)
 import Core.DocumentWithUndo as Document exposing (Model)
+import Core.Name as Name
+import Core.Types as Types
 import Css exposing (..)
 import Html.Styled exposing (..)
 import Html.Styled.Attributes exposing (css)
 import Html.Styled.Events as Events
 import Json.Decode exposing (Decoder)
 import Json.Encode exposing (Value)
-import Name
 import Sheet
-import Types
 import Ui
 
 

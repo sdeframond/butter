@@ -1,4 +1,4 @@
-module Formula exposing
+module Core.Formula exposing
     ( Context
     , Formula
     , decoder
@@ -11,12 +11,12 @@ module Formula exposing
     , sourceView
     )
 
+import Core.Name as Name exposing (Name)
+import Core.Types as Types
 import Json.Decode as Decode
 import Json.Encode as Encode
-import Name exposing (Name)
 import Parser as P exposing ((|.), (|=))
 import Set
-import Types
 
 
 type Formula

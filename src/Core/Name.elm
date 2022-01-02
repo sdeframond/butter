@@ -1,4 +1,4 @@
-module Name exposing
+module Core.Name exposing
     ( Name
     , Store
     , appendInt
@@ -21,11 +21,11 @@ module Name exposing
     , toString
     )
 
+import Core.PositiveInt as PositiveInt exposing (PositiveInt)
 import Dict exposing (Dict)
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Parser as P exposing ((|.), (|=))
-import PositiveInt exposing (PositiveInt)
 import Set
 
 

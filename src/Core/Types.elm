@@ -1,4 +1,4 @@
-module Types exposing
+module Core.Types exposing
     ( DataType(..)
     , Error(..)
     , LocatedName
@@ -15,11 +15,11 @@ module Types exposing
     , valueToString
     )
 
+import Core.Name as Name exposing (Name)
+import Core.PositiveInt exposing (PositiveInt)
 import DecodeHelpers
 import Json.Decode as Decode
 import Json.Encode as Encode
-import Name exposing (Name)
-import PositiveInt exposing (PositiveInt)
 
 
 type Error

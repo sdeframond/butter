@@ -1,4 +1,4 @@
-module NamedAndOrderedStore exposing
+module Core.NamedAndOrderedStore exposing
     ( Id
     , NamedAndOrderedStore
     , applyContentFrom
@@ -24,12 +24,12 @@ module NamedAndOrderedStore exposing
     , zipMap
     )
 
+import Core.Name as Name exposing (Name)
+import Core.PositiveInt as Id exposing (PositiveInt)
+import Core.Types as Types
+import Core.ZipList as ZL exposing (ZipList)
 import Json.Decode as Decode
 import Json.Encode as Encode
-import Name exposing (Name)
-import PositiveInt as Id exposing (PositiveInt)
-import Types
-import ZipList as ZL exposing (ZipList)
 
 
 type NamedAndOrderedStore a

@@ -1,8 +1,8 @@
 module DocumentTest exposing (suite)
 
 import Core.Document as Document
+import Core.Name as Name
 import Expect
-import Name
 import Test exposing (..)
 
 

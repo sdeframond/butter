@@ -1,8 +1,8 @@
 module NamedAndOrderedStoreTest exposing (..)
 
+import Core.Name as Name
+import Core.NamedAndOrderedStore as Store
 import Expect
-import Name
-import NamedAndOrderedStore as Store
 import Test exposing (..)
 
 

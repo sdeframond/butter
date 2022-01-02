@@ -24,14 +24,14 @@ module Core.Document exposing
 
 import Bytes exposing (Bytes)
 import Bytes.Encode
+import Core.Name as Name exposing (Name)
+import Core.NamedAndOrderedStore as Store exposing (NamedAndOrderedStore)
+import Core.Types as Types
 import File.Download exposing (bytes)
 import Json.Decode
 import Json.Encode
-import Name exposing (Name)
-import NamedAndOrderedStore as Store exposing (NamedAndOrderedStore)
 import Sheet exposing (Sheet)
 import Time
-import Types
 import Zip
 import Zip.Entry as Entry
 

@@ -1,4 +1,4 @@
-module ZipList exposing
+module Core.ZipList exposing
     ( ZipList
     , current
     , decoder

@@ -1,8 +1,8 @@
 module ZipListTest exposing (..)
 
+import Core.ZipList as ZL
 import Expect
 import Test exposing (..)
-import ZipList as ZL
 
 
 suite : Test

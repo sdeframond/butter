@@ -3,6 +3,8 @@ port module Main exposing (main)
 import Browser
 import Browser.Events exposing (Visibility(..), onVisibilityChange)
 import Bytes exposing (Bytes)
+import Core.Name as Name exposing (Name)
+import Core.NamedAndOrderedStore as Store
 import Css
 import Css.Global as Global
 import DocumentView as Document
@@ -15,8 +17,6 @@ import Html.Styled.Events exposing (onClick)
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Keyboard
-import Name exposing (Name)
-import NamedAndOrderedStore as Store
 import Task
 import Ui
 

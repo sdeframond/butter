@@ -26,12 +26,12 @@ module Core.DocumentWithUndo exposing
 
 import Bytes exposing (Bytes)
 import Core.Document as Document
+import Core.Name exposing (Name)
+import Core.Types as Types
 import Core.UndoCmd as UndoCmd
 import Json.Decode exposing (Decoder, Value)
 import Json.Encode
-import Name exposing (Name)
 import Sheet
-import Types
 import UndoList exposing (UndoList)
 import UndoList.Decode
 import UndoList.Encode

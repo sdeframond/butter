@@ -10,10 +10,13 @@ module MyTable exposing
     , view
     )
 
+import Core.Formula as Formula exposing (Formula)
+import Core.Name as Name exposing (Name)
+import Core.PositiveInt as PositiveInt exposing (PositiveInt)
+import Core.Types as Types exposing (DataType(..), Error(..), ValueOrError)
 import Core.UndoCmd as UndoCmd
 import Css exposing (..)
 import DecodeHelpers
-import Formula exposing (Formula)
 import Html
 import Html.Styled as H
     exposing
@@ -30,10 +33,7 @@ import Json.Decode as Decode
 import Json.Encode as Encode
 import List as L
 import Maybe as M
-import Name exposing (Name)
-import PositiveInt exposing (PositiveInt)
 import Table as T exposing (defaultCustomizations)
-import Types exposing (DataType(..), Error(..), ValueOrError)
 import Ui
 
 

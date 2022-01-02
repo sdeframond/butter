@@ -12,19 +12,19 @@ module Grid exposing
     , view
     )
 
+import Core.Formula as Formula exposing (Formula)
+import Core.Name as Name exposing (Name)
+import Core.PositiveInt as PositiveInt
+import Core.Types as Types exposing (DataType(..), Error(..), Value(..))
 import Core.UndoCmd as UndoCmd
 import Css exposing (..)
 import DecodeHelpers
-import Formula exposing (Formula)
 import Html.Styled as H exposing (..)
 import Html.Styled.Attributes exposing (css, value)
 import Html.Styled.Events exposing (onClick, onInput)
 import Json.Decode as Decode
 import Json.Encode as Encode
 import List as L
-import Name exposing (Name)
-import PositiveInt
-import Types exposing (DataType(..), Error(..), Value(..))
 import Ui
 
 

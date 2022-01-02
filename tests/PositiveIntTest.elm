@@ -1,7 +1,7 @@
 module PositiveIntTest exposing (..)
 
+import Core.PositiveInt exposing (..)
 import Helpers
-import PositiveInt exposing (..)
 import Test exposing (..)
 
 
