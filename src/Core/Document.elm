@@ -24,8 +24,8 @@ module Core.Document exposing
 
 import Bytes exposing (Bytes)
 import Bytes.Encode
+import Core.FracStore as Store exposing (Store)
 import Core.Name as Name exposing (Name)
-import Core.NamedAndOrderedStore as Store exposing (NamedAndOrderedStore)
 import Core.Types as Types
 import File.Download exposing (bytes)
 import Json.Decode
@@ -34,10 +34,6 @@ import Sheet exposing (Sheet)
 import Time
 import Zip
 import Zip.Entry as Entry
-
-
-type alias Store a =
-    NamedAndOrderedStore a
 
 
 type Model
@@ -94,12 +90,7 @@ updateCurrentSheet func model_ =
             commitEditedSheetNames model_
 
         setCurrent sheet =
-            Model
-                { data
-                    | store =
-                        sheet
-                            |> Store.setCurrent data.store
-                }
+            Model { data | store = Store.setCurrent data.store sheet }
     in
     func (Store.getIdByName data.store) (getCurrentSheet model)
         |> Tuple.mapFirst setCurrent

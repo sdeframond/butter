@@ -8,8 +8,10 @@ module Core.PositiveInt exposing
     , one
     , range
     , ten
+    , toInt
     , toLetters
     , toString
+    , unsafeFromInt
     )
 
 import Json.Decode as Decode
@@ -43,6 +45,16 @@ add (PositiveInt x) (PositiveInt y) =
 next : PositiveInt -> PositiveInt
 next (PositiveInt i) =
     PositiveInt (i + 1)
+
+
+toInt : PositiveInt -> Int
+toInt (PositiveInt i) =
+    i
+
+
+unsafeFromInt : Int -> PositiveInt
+unsafeFromInt i =
+    PositiveInt i
 
 
 toString : PositiveInt -> String

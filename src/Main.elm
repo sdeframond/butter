@@ -3,8 +3,8 @@ port module Main exposing (main)
 import Browser
 import Browser.Events exposing (Visibility(..), onVisibilityChange)
 import Bytes exposing (Bytes)
+import Core.FracStore as Store exposing (Store)
 import Core.Name as Name exposing (Name)
-import Core.NamedAndOrderedStore as Store
 import Css
 import Css.Global as Global
 import DocumentView as Document
@@ -39,10 +39,6 @@ main =
 
 
 -- MODEL
-
-
-type alias Store a =
-    Store.NamedAndOrderedStore a
 
 
 type alias DocumentStore =
