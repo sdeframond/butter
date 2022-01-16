@@ -1,4 +1,4 @@
-port module Main exposing (main)
+module Main exposing (main)
 
 import Browser
 import Browser.Events exposing (Visibility(..), onVisibilityChange)
@@ -17,6 +17,7 @@ import Html.Styled.Events exposing (onClick)
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Keyboard
+import Ports
 import Task
 import Ui
 
@@ -80,24 +81,8 @@ initStore jsonValue =
 
         Err error ->
             ( Store.init defaultDocumentName Document.init
-            , logError <| Decode.errorToString error
+            , Ports.logError <| Decode.errorToString error
             )
-
-
-
--- PORTS
-
-
-port setStorage : Encode.Value -> Cmd msg
-
-
-port updateState : (Encode.Value -> msg) -> Sub msg
-
-
-port logError : String -> Cmd msg
-
-
-port blurs : (Encode.Value -> msg) -> Sub msg
 
 
 
@@ -129,7 +114,7 @@ setStorageCmd msg ( newModel, cmds ) =
 
         _ ->
             ( newModel
-            , Cmd.batch [ setStorage (encodeDocumentStore newModel.documents), cmds ]
+            , Cmd.batch [ Ports.setStorage (encodeDocumentStore newModel.documents), cmds ]
             )
 
 
@@ -288,8 +273,8 @@ subscriptions model =
         [ storeSubscriptions model.documents
         , Keyboard.subscriptions |> Sub.map KeyboardMsg
         , onVisibilityChange VisibilityChangedMsg
-        , blurs (always <| VisibilityChangedMsg Hidden)
-        , updateState
+        , Ports.blurs (always <| VisibilityChangedMsg Hidden)
+        , Ports.updateState
             (Decode.decodeValue documentStoreDecoder
                 >> Result.withDefault model.documents
                 >> MergeDocumentStoreMsg
