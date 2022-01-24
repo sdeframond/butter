@@ -15,7 +15,7 @@ module DocumentView exposing
     )
 
 import Bytes exposing (Bytes)
-import Core.DocumentWithUndo as Document exposing (Model)
+import Core.DocumentWithUndo as Document
 import Core.Name as Name
 import Core.Types as Types
 import Css exposing (..)
@@ -24,6 +24,7 @@ import Html.Styled.Attributes exposing (css)
 import Html.Styled.Events as Events
 import Json.Decode exposing (Decoder)
 import Json.Encode exposing (Value)
+import Ports
 import Sheet
 import Ui
 
@@ -52,12 +53,12 @@ fromBytes =
     Document.fromBytes
 
 
-undo : Model -> Model
+undo : Model -> ( Model, Cmd Msg )
 undo =
     Document.undo
 
 
-redo : Model -> Model
+redo : Model -> ( Model, Cmd Msg )
 redo =
     Document.redo
 
@@ -78,9 +79,12 @@ encode =
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
-    Document.getCurrentSheet model
-        |> Sheet.subscriptions
-        |> Sub.map SheetMsg
+    Sub.batch
+        [ Document.getCurrentSheet model
+            |> Sheet.subscriptions
+            |> Sub.map SheetMsg
+        , Ports.docDiffReceiver DiffReceived
+        ]
 
 
 
@@ -93,7 +97,8 @@ type Msg
     | RemoveSheet Types.SheetId
     | EditCurrentSheetName
     | UpdateEditedSheetName String
-    | SetModel Model
+    | DiffReceived Json.Decode.Value
+    | SetModel ( Model, Cmd Msg )
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -104,14 +109,13 @@ update msg model =
                 updateSheet getSheetId sheet =
                     Sheet.update getSheetId sheetMsg sheet
             in
-            Document.updateCurrentSheet updateSheet model
-                |> Tuple.mapSecond (Cmd.map SheetMsg)
+            Document.updateCurrentSheet SheetMsg updateSheet model
 
         InsertSheet params ->
-            ( Document.insertSheet params model, Cmd.none )
+            Document.insertSheet params model
 
         RemoveSheet sheetId ->
-            ( Document.removeSheet sheetId model, Cmd.none )
+            Document.removeSheet sheetId model
 
         EditCurrentSheetName ->
             ( Document.editCurrentSheetName model, Cmd.none )
@@ -119,8 +123,17 @@ update msg model =
         UpdateEditedSheetName input ->
             ( Document.updateCurrentEditedSheetName input model, Cmd.none )
 
+        DiffReceived value ->
+            let
+                applyDiff diff =
+                    ( Document.applyDiff diff model |> Result.withDefault model, Cmd.none )
+            in
+            Json.Decode.decodeValue (Document.diffDecoder model) value
+                |> Result.map applyDiff
+                |> Result.withDefault ( model, Cmd.none )
+
         SetModel m ->
-            ( m, Cmd.none )
+            m
 
 
 
@@ -195,7 +208,7 @@ sheetSelector model =
                                 zippedModel |> Document.commitEditedSheetNames
 
                             else
-                                zippedModel
+                                ( zippedModel, Cmd.none )
                 , onEdit = \_ -> EditCurrentSheetName
                 , onRemove = \_ -> zippedModel |> Document.getCurrentSheetId |> RemoveSheet
                 , onUpdate = UpdateEditedSheetName

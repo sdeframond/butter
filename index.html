@@ -44,14 +44,20 @@
 		window.onblur = function () { app.ports.blurs.send({}) }
 
 		channel.onmessage = function (event) {
-			app.ports.updateState.send(event.data)
+			// app.ports.updateState.send(event.data)
+			console.log("Received: ", event.data)
+			app.ports.docDiffReceiver.send(event.data)
 		}
 		// Listen for commands from the `setStorage` port.
 		// Turn the data to a string and put it in localStorage.
 		app.ports.setStorage.subscribe(function (state) {
-			channel.postMessage(state)
+			// channel.postMessage(state)
 			localStorage.setItem('appstate', JSON.stringify(state));
 		});
+		app.ports.sendDocDiff.subscribe(function (diff) {
+			console.log("Sending: ", diff)
+			channel.postMessage(diff)
+		})
 		app.ports.logError.subscribe(console.error);
 
 	</script>

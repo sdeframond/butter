@@ -4,7 +4,7 @@ import Json.Encode exposing (Value)
 
 
 
--- PORTS
+-- MAIN PORTS
 
 
 port setStorage : Value -> Cmd msg
@@ -17,3 +17,13 @@ port logError : String -> Cmd msg
 
 
 port blurs : (Value -> msg) -> Sub msg
+
+
+
+-- DOC PORTS
+
+
+port sendDocDiff : Value -> Cmd msg
+
+
+port docDiffReceiver : (Value -> msg) -> Sub msg

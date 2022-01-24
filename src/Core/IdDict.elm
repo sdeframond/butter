@@ -11,6 +11,7 @@ module Core.IdDict exposing
     , insert
     , map
     , mapState
+    , merge
     , remove
     , toList
     )
@@ -74,6 +75,24 @@ toList (IdDict dict) =
 fromList : List ( Id, a ) -> IdDict a
 fromList list =
     list |> List.map (Tuple.mapFirst Id.toInt) |> Dict.fromList |> IdDict
+
+
+merge :
+    (Id -> a -> result -> result)
+    -> (Id -> a -> b -> result -> result)
+    -> (Id -> b -> result -> result)
+    -> IdDict a
+    -> IdDict b
+    -> result
+    -> result
+merge leftStep bothStep rightStep (IdDict leftDict) (IdDict rightDict) initialResult =
+    Dict.merge
+        (Id.unsafeFromInt >> leftStep)
+        (Id.unsafeFromInt >> bothStep)
+        (Id.unsafeFromInt >> rightStep)
+        leftDict
+        rightDict
+        initialResult
 
 
 

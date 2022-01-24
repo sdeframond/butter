@@ -10,10 +10,12 @@ module Core.ZipIdDict exposing
     , insert
     , map
     , mapState
+    , merge
     , remove
     , select
     , setCurrentItem
     , singleton
+    , toIdDict
     , zipMap
     )
 
@@ -137,6 +139,28 @@ zipMap compare f ((ZD curId curItem dict) as current) =
     zipped
         |> List.sortWith compareZippedItem
         |> List.map (\( d, isCurrent ) -> f d isCurrent)
+
+
+merge :
+    (Id -> a -> result -> result)
+    -> (Id -> a -> b -> result -> result)
+    -> (Id -> b -> result -> result)
+    -> ZipIdDict a
+    -> ZipIdDict b
+    -> result
+    -> result
+merge leftStep bothStep rightStep (ZD lCurId lCurV left) (ZD rCurId rCurV right) initialResult =
+    IdDict.merge leftStep
+        bothStep
+        rightStep
+        (IdDict.insert lCurId lCurV left)
+        (IdDict.insert rCurId rCurV right)
+        initialResult
+
+
+toIdDict : ZipIdDict a -> IdDict a
+toIdDict (ZD curId curItem dict) =
+    IdDict.insert curId curItem dict
 
 
 

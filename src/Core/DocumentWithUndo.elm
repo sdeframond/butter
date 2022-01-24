@@ -1,8 +1,11 @@
 module Core.DocumentWithUndo exposing
-    ( Model
+    ( Diff
+    , Model
     , applyContentFrom
+    , applyDiff
     , commitEditedSheetNames
     , decoder
+    , diffDecoder
     , editCurrentSheetName
     , encode
     , eval
@@ -25,12 +28,14 @@ module Core.DocumentWithUndo exposing
     )
 
 import Bytes exposing (Bytes)
+import Core.Diff as Diff
 import Core.Document as Document
 import Core.Name exposing (Name)
 import Core.Types as Types
 import Core.UndoCmd as UndoCmd
 import Json.Decode exposing (Decoder, Value)
 import Json.Encode
+import Ports
 import Sheet
 import UndoList exposing (UndoList)
 import UndoList.Decode
@@ -45,6 +50,10 @@ type alias Data =
     { undoList : UndoList Document.Model
     , workingCopy : Document.Model
     }
+
+
+type alias Diff =
+    Document.Diff
 
 
 init : Model
@@ -70,16 +79,32 @@ fromBytes =
     Document.fromBytes >> Maybe.map (\doc -> Model { undoList = UndoList.fresh doc, workingCopy = doc })
 
 
-undo : Model -> Model
+undo : Model -> ( Model, Cmd msg )
 undo (Model model) =
     UndoList.undo model.undoList
         |> (\undoList -> Model { undoList = undoList, workingCopy = undoList.present })
+        |> withSendDocDiffCmd (Model model)
 
 
-redo : Model -> Model
+redo : Model -> ( Model, Cmd msg )
 redo (Model model) =
     UndoList.redo model.undoList
         |> (\undoList -> Model { undoList = undoList, workingCopy = undoList.present })
+        |> withSendDocDiffCmd (Model model)
+
+
+sendDocDiffCmd : Document.Model -> Document.Model -> Cmd msg
+sendDocDiffCmd old new =
+    if old == new then
+        Cmd.none
+
+    else
+        Document.makeDiff new old |> Document.encodeDiff new |> Ports.sendDocDiff
+
+
+withSendDocDiffCmd : Model -> Model -> ( Model, Cmd msg )
+withSendDocDiffCmd (Model old) (Model new) =
+    ( Model new, sendDocDiffCmd old.workingCopy new.workingCopy )
 
 
 {-| Used for tests only.
@@ -90,7 +115,7 @@ past (Model data) =
     data.undoList.past
 
 
-commitDocToUndoList : Document.Model -> Data -> Model
+commitDocToUndoList : Document.Model -> Data -> ( Model, Cmd msg )
 commitDocToUndoList doc model =
     let
         contentHasChanged =
@@ -101,14 +126,10 @@ commitDocToUndoList doc model =
             { undoList = UndoList.new doc model.undoList
             , workingCopy = doc
             }
+            |> withSendDocDiffCmd (Model model)
 
     else
-        Model { model | workingCopy = doc }
-
-
-commitWorkingCopy : Model -> Model
-commitWorkingCopy (Model data) =
-    commitDocToUndoList data.workingCopy data
+        ( Model { model | workingCopy = doc }, Cmd.none )
 
 
 getCurrentSheet : Model -> Sheet.Sheet
@@ -116,26 +137,31 @@ getCurrentSheet (Model model) =
     model.workingCopy |> Document.getCurrentSheet
 
 
-updateCurrentSheet : ((Name -> Maybe Types.SheetId) -> Sheet.Sheet -> ( Sheet.Sheet, ( UndoCmd.Cmd, cmd ) )) -> Model -> ( Model, cmd )
-updateCurrentSheet func (Model model) =
+updateCurrentSheet : (sheetMsg -> msg) -> ((Name -> Maybe Types.SheetId) -> Sheet.Sheet -> ( Sheet.Sheet, ( UndoCmd.Cmd, Cmd sheetMsg ) )) -> Model -> ( Model, Cmd msg )
+updateCurrentSheet toMsg func (Model model) =
     let
         ( newDoc, ( undoCmd, sheetCmd ) ) =
             Document.updateCurrentSheet func model.workingCopy
     in
     case undoCmd of
         UndoCmd.New ->
-            ( commitDocToUndoList newDoc model, sheetCmd )
+            let
+                ( newModel, cmd ) =
+                    commitDocToUndoList newDoc model
+            in
+            ( newModel, Cmd.batch [ Cmd.map toMsg sheetCmd, cmd ] )
 
         UndoCmd.None ->
-            ( Model { model | workingCopy = newDoc }, sheetCmd )
+            ( Model { model | workingCopy = newDoc }, Cmd.map toMsg sheetCmd )
 
 
-insertSheet : Sheet.Params -> Model -> Model
-insertSheet params model =
-    model |> mapWorkingCopy (Document.insertSheet params) |> commitWorkingCopy
+insertSheet : Sheet.Params -> Model -> ( Model, Cmd msg )
+insertSheet params (Model model) =
+    Document.insertSheet params model.workingCopy
+        |> (\doc -> commitDocToUndoList doc model)
 
 
-removeSheet : Types.SheetId -> Model -> Model
+removeSheet : Types.SheetId -> Model -> ( Model, Cmd msg )
 removeSheet sheetId (Model model) =
     commitDocToUndoList (Document.removeSheet sheetId model.workingCopy) model
 
@@ -150,7 +176,7 @@ editCurrentSheetName model =
     mapWorkingCopy Document.editCurrentSheetName model
 
 
-commitEditedSheetNames : Model -> Model
+commitEditedSheetNames : Model -> ( Model, Cmd msg )
 commitEditedSheetNames (Model model) =
     let
         committedDoc =
@@ -198,6 +224,25 @@ zipMapSheets f (Model model) =
     Document.zipMapSheets wrapped model.workingCopy
 
 
+makeDiff : Model -> Model -> Document.Diff
+makeDiff (Model new) (Model old) =
+    Document.makeDiff new.workingCopy old.workingCopy
+
+
+applyDiff : Document.Diff -> Model -> Result (Diff.Error Never) Model
+applyDiff diff (Model model) =
+    let
+        setWorkingCopy copy =
+            Model { model | workingCopy = copy }
+    in
+    Document.applyDiff diff model.workingCopy
+        |> Result.map setWorkingCopy
+
+
+
+-- JSON
+
+
 decoder : Decoder Model
 decoder =
     Json.Decode.map2 Data
@@ -212,3 +257,13 @@ encode (Model model) =
         [ ( "undoList", model.undoList |> UndoList.map Document.encode |> UndoList.Encode.undolist )
         , ( "workingCopy", Document.encode model.workingCopy )
         ]
+
+
+diffDecoder : Model -> Decoder Diff
+diffDecoder (Model model) =
+    Document.diffDecoder model.workingCopy
+
+
+encodeDiff : Model -> Diff -> Value
+encodeDiff (Model model) =
+    Document.encodeDiff model.workingCopy

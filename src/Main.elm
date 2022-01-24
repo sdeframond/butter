@@ -123,7 +123,7 @@ update msg model =
     -- case Debug.log "msg" msg of
     case msg of
         KeyboardMsg kbdMsg ->
-            ( handleKeyboardMsg kbdMsg model, Cmd.none )
+            handleKeyboardMsg kbdMsg model
 
         VisibilityChangedMsg visibility ->
             case visibility of
@@ -200,13 +200,13 @@ update msg model =
             )
 
 
-handleKeyboardMsg : Keyboard.Msg -> Model -> Model
+handleKeyboardMsg : Keyboard.Msg -> Model -> ( Model, Cmd Msg )
 handleKeyboardMsg kbdMsg model =
     let
         mapDocs f docs =
             Store.current docs
                 |> f
-                |> Store.setCurrent docs
+                |> Tuple.mapFirst (Store.setCurrent docs)
 
         ( pressedKeys, changed ) =
             Keyboard.updateWithKeyChange Keyboard.anyKeyUpper kbdMsg model.pressedKeys
@@ -232,7 +232,7 @@ handleKeyboardMsg kbdMsg model =
                     Nothing
 
         default =
-            newModel.documents
+            ( newModel.documents, Cmd.none )
 
         handleKey key =
             case key of
@@ -260,7 +260,9 @@ handleKeyboardMsg kbdMsg model =
         |> Maybe.andThen onlyKeyDown
         |> Maybe.map handleKey
         |> Maybe.withDefault default
-        |> (\docs -> { newModel | documents = docs })
+        |> Tuple.mapBoth
+            (\docs -> { newModel | documents = docs })
+            (Cmd.map DocumentMsg)
 
 
 

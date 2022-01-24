@@ -1,5 +1,6 @@
 module Core.FracStore exposing
     ( Id
+    , Item
     , Store
     , applyContentFrom
     , cancelEdits
@@ -10,14 +11,19 @@ module Core.FracStore exposing
     , decoder
     , editCurrentName
     , encode
+    , encodeItem
     , getById
     , getCurrentEditStatus
     , getIdByName
     , getNameById
     , init
     , insert
+    , insertItem
+    , itemDecoder
+    , merge
     , remove
     , setCurrent
+    , toIdDict
     , updateCurrentEditedName
     , zipMap
     )
@@ -60,6 +66,7 @@ type alias Id =
 init : Name -> a -> Store a
 init initName value =
     let
+        -- TODO replace with a tuple (sessionId, localId)
         initId =
             Id.one
     in
@@ -215,6 +222,39 @@ remove id ((Store data) as store) =
                     getNameById store id
                         |> Maybe.map (\name -> Name.remove name data.nameIndex)
                         |> Maybe.withDefault data.nameIndex
+        }
+
+
+merge :
+    (Id -> Item a -> result -> result)
+    -> (Id -> Item a -> Item b -> result -> result)
+    -> (Id -> Item b -> result -> result)
+    -> Store a
+    -> Store b
+    -> result
+    -> result
+merge leftStep bothStep rightStep (Store left) (Store right) initialResult =
+    ZipIdDict.merge
+        leftStep
+        bothStep
+        rightStep
+        left.items
+        right.items
+        initialResult
+
+
+toIdDict (Store store) =
+    -- TODO replace with foldr/foldl
+    ZipIdDict.toIdDict store.items
+
+
+insertItem : Id -> Item a -> Store a -> Store a
+insertItem id item (Store store) =
+    Store
+        { store
+            | items = ZipIdDict.insert id item store.items
+
+            -- TODO update name index
         }
 
 

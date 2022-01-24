@@ -1,11 +1,15 @@
 module Core.Document exposing
-    ( Model
+    ( Diff
+    , Model
     , applyContentFrom
+    , applyDiff
     , cancelEdits
     , commitEditedSheetNames
     , decoder
+    , diffDecoder
     , editCurrentSheetName
     , encode
+    , encodeDiff
     , eval
     , fromBytes
     , getCurrentSheet
@@ -15,6 +19,7 @@ module Core.Document exposing
     , getSheetNameById
     , init
     , insertSheet
+    , makeDiff
     , removeSheet
     , toBytes
     , updateCurrentEditedSheetName
@@ -24,7 +29,9 @@ module Core.Document exposing
 
 import Bytes exposing (Bytes)
 import Bytes.Encode
+import Core.Diff as Diff
 import Core.FracStore as Store exposing (Store)
+import Core.IdDict as IdDict
 import Core.Name as Name exposing (Name)
 import Core.Types as Types
 import File.Download exposing (bytes)
@@ -104,6 +111,11 @@ insertSheet params (Model data) =
         }
 
 
+insert : Store.Id -> Store.Item Sheet -> Model -> Model
+insert id sheet (Model model) =
+    Model { model | store = Store.insertItem id sheet model.store }
+
+
 removeSheet : Types.SheetId -> Model -> Model
 removeSheet sheetId (Model data) =
     Model { data | store = Store.remove sheetId data.store }
@@ -146,6 +158,34 @@ zipMapSheets f (Model data) =
             f (Model { data | store = store }) isCurrent
     in
     Store.zipMap go data.store
+
+
+
+-- DIFF
+
+
+type alias Diff =
+    IdDict.IdDict (Diff.DiffValue (Store.Item Sheet) (Store.Item Sheet))
+
+
+makeDiff : Model -> Model -> Diff
+makeDiff (Model new) (Model old) =
+    Diff.makeDiff IdDict.empty
+        IdDict.insert
+        Store.merge
+        always
+        new.store
+        old.store
+
+
+applyDiff : Diff -> Model -> Result (Diff.Error Never) Model
+applyDiff diff (Model { store }) =
+    let
+        merge ls bs rs diff_ dict =
+            IdDict.merge ls bs rs diff_ (Store.toIdDict dict)
+    in
+    Diff.applyDiff merge Store.insertItem Store.remove (\x _ -> Ok x) diff store
+        |> Result.map (\s -> Model { store = s })
 
 
 
@@ -229,3 +269,21 @@ encode (Model data) =
     Json.Encode.object
         [ ( jsonKeys.store, Store.encode Sheet.encode data.store )
         ]
+
+
+diffDecoder : Model -> Json.Decode.Decoder Diff
+diffDecoder (Model model) =
+    let
+        itemDecoder =
+            Store.getIdByName model.store |> Sheet.decoder |> Store.itemDecoder
+    in
+    IdDict.decoder (Diff.diffValueDecoder itemDecoder itemDecoder)
+
+
+encodeDiff : Model -> Diff -> Json.Encode.Value
+encodeDiff (Model model) diff =
+    let
+        encodeItem =
+            Store.getNameById model.store |> Sheet.encode |> Store.encodeItem
+    in
+    IdDict.encode (Diff.encodeDiffValue encodeItem encodeItem) diff
