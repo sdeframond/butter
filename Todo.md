@@ -20,6 +20,13 @@ Table ranges :
 Todo
 ====
 
+- Enabler : replace `SetModel` Msg with `SelectSheet` Msg in order to avoid race conditions. See https://blog.realkinetic.com/the-trickiest-elm-bug-ive-ever-seen-988aff6cbbd7. 
+- Enabler : make Formula.encode/decode context independent (remove the need for a `getSheetId` parameter).
+  - Benefit : less coupling.
+    - But : it would allow broken references to be introduced when decoding (esp. from a Diff).
+  - Options :
+    - Requires encoding the AST instead of the source.
+    - Or replacing the formula's UserInput with the formatted source then using this directly. But it breaks when renaming a sheet.
 - Enabler : Remove dependency to elm-sortable-table (implement my own)
     - Benefits : to store current state in local storage
     - Benefit : to facilitate having a consistent look across sheet types
@@ -49,6 +56,7 @@ Todo
 Doing
 =====
 
+- Feature : live multiplayer
 - Feature : Undo/redo
   - TODO :
     - Implement undo/redo within sheets
