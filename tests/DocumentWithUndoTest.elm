@@ -25,29 +25,30 @@ suite =
             \_ ->
                 doc
                     |> expectPastToChangeBy 1
-                        (Document.updateCurrentEditedSheetName "changed" >> Document.commitEditedSheetNames)
+                        (Document.updateCurrentEditedSheetName "changed" >> Document.commitEditedSheetNames >> Tuple.first)
         , test ".commitEditedSheetNames does not push a new state when there is no change" <|
             \_ ->
                 doc
                     |> expectPastToChangeBy 0
-                        (Document.updateCurrentEditedSheetName "not valid" >> Document.commitEditedSheetNames)
+                        (Document.updateCurrentEditedSheetName "not valid" >> Document.commitEditedSheetNames >> Tuple.first)
         , test ".editCurrentSheetName does not push a new state" <|
             \_ ->
                 doc |> expectPastToChangeBy 0 Document.editCurrentSheetName
         , test ".insertSheet pushes a new state" <|
             \_ ->
-                doc |> expectPastToChangeBy 1 (Document.insertSheet Sheet.allParams.grid)
+                doc |> expectPastToChangeBy 1 (Document.insertSheet Sheet.allParams.grid >> Tuple.first)
         , test ".applyContentFrom does not push a new state" <|
             \_ ->
                 doc |> expectPastToChangeBy 0 (Document.applyContentFrom Document.init)
         , test ".removeSheet does not push a new state when there is only one sheet left" <|
             \_ ->
-                doc |> expectPastToChangeBy 0 (\d -> Document.removeSheet (Document.getCurrentSheetId d) d)
+                doc |> expectPastToChangeBy 0 (\d -> Document.removeSheet (Document.getCurrentSheetId d) d |> Tuple.first)
         , test ".removeSheet pushes a new state when there is more than one sheet" <|
             \_ ->
                 doc
                     |> Document.insertSheet Sheet.allParams.grid
-                    |> expectPastToChangeBy 1 (\d -> Document.removeSheet (Document.getCurrentSheetId d) d)
+                    |> Tuple.first
+                    |> expectPastToChangeBy 1 (\d -> Document.removeSheet (Document.getCurrentSheetId d) d |> Tuple.first)
         , test ".updateCurrentEditedSheetName does not push a new state" <|
             \_ ->
                 doc |> expectPastToChangeBy 0 (Document.updateCurrentEditedSheetName "changed")
