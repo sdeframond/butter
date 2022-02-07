@@ -2,18 +2,24 @@ module Sheet exposing
     ( AllParams
     , Config
     , Context
+    , Diff
+    , DiffError
     , Msg(..)
     , Params
     , Sheet
     , allParams
     , applyContentFrom
+    , applyDiff
     , decoder
+    , diffDecoder
     , encode
+    , encodeDiff
     , eval
     , fromParams
     , initGrid
     , initPivotTable
     , initTable
+    , makeDiff
     , subscriptions
     , update
     , view
@@ -22,6 +28,7 @@ module Sheet exposing
 import Core.Name exposing (Name)
 import Core.Types as Types
 import Core.UndoCmd as UndoCmd
+import DecodeHelpers
 import Grid exposing (Grid)
 import Html.Styled exposing (Html)
 import Json.Decode as Decode
@@ -200,6 +207,70 @@ view config sheet =
 
         PivotTableSheet pt ->
             MyPivotTable.view (PivotTableMsg >> config.toMsg) pt
+
+
+
+-- DIFF
+
+
+type Diff
+    = SheetTypeChangedDiff Sheet
+    | GridDiff Grid.Diff
+
+
+type DiffError
+    = DiffDoesNotMatchSheetTypeError
+    | GridDiffError Grid.DiffError
+
+
+makeDiff : Sheet -> Sheet -> Diff
+makeDiff new old =
+    case ( new, old ) of
+        ( GridSheet newGrid, GridSheet oldGrid ) ->
+            GridDiff (Grid.makeDiff newGrid oldGrid)
+
+        ( _, _ ) ->
+            SheetTypeChangedDiff new
+
+
+applyDiff : Diff -> Sheet -> Result DiffError Sheet
+applyDiff diff sheet =
+    case ( diff, sheet ) of
+        ( SheetTypeChangedDiff newSheet, _ ) ->
+            Ok newSheet
+
+        ( GridDiff gridDiff, GridSheet grid ) ->
+            Grid.applyDiff gridDiff grid
+                |> Result.map GridSheet
+                |> Result.mapError GridDiffError
+
+        ( _, _ ) ->
+            Err DiffDoesNotMatchSheetTypeError
+
+
+diffDecoder : (Name -> Maybe Types.SheetId) -> Decode.Decoder Diff
+diffDecoder getSheetId =
+    Decode.field "type" Decode.string
+        |> DecodeHelpers.switch "Decoder type invalid"
+            [ ( "SheetTypeChangedDiff", decoder getSheetId |> Decode.field "diff" |> Decode.map SheetTypeChangedDiff )
+            , ( "GridDiff", Grid.diffDecoder getSheetId |> Decode.field "diff" |> Decode.map GridDiff )
+            ]
+
+
+encodeDiff : (Types.SheetId -> Maybe Name) -> Diff -> Encode.Value
+encodeDiff getSheetName diff =
+    case diff of
+        SheetTypeChangedDiff sheet ->
+            Encode.object
+                [ ( "type", Encode.string "SheetTypeChangedDiff" )
+                , ( "diff", encode getSheetName sheet )
+                ]
+
+        GridDiff gridDiff ->
+            Encode.object
+                [ ( "type", Encode.string "GridDiff" )
+                , ( "diff", Grid.encodeDiff getSheetName gridDiff )
+                ]
 
 
 

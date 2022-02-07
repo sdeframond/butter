@@ -229,7 +229,7 @@ makeDiff (Model new) (Model old) =
     Document.makeDiff new.workingCopy old.workingCopy
 
 
-applyDiff : Document.Diff -> Model -> Result (Diff.Error Never) Model
+applyDiff : Document.Diff -> Model -> Result (Diff.Error Sheet.DiffError) Model
 applyDiff diff (Model model) =
     let
         setWorkingCopy copy =

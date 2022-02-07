@@ -13,6 +13,7 @@ module Core.Name exposing
     , insert
     , matchesString
     , member
+    , merge
     , parser
     , remove
     , removeString
@@ -127,6 +128,11 @@ removeString str (Store d) =
 member : Name -> Store a -> Bool
 member name (Store d) =
     Dict.member (toString name) d
+
+
+merge : (Name -> a -> f -> f) -> (Name -> a -> b -> f -> f) -> (Name -> b -> f -> f) -> Store a -> Store b -> f -> f
+merge leftStep bothStep rightStep (Store left) (Store right) initResult =
+    Dict.merge (Name >> leftStep) (Name >> bothStep) (Name >> rightStep) left right initResult
 
 
 

@@ -1,17 +1,24 @@
 module Grid exposing
     ( Config
     , Context
+    , Diff
+    , DiffError
     , Grid
     , Msg(..)
     , applyContentFrom
+    , applyDiff
     , decoder
+    , diffDecoder
     , encode
+    , encodeDiff
     , evalCell
     , init
+    , makeDiff
     , update
     , view
     )
 
+import Core.Diff as Diff
 import Core.Formula as Formula exposing (Formula)
 import Core.Name as Name exposing (Name)
 import Core.PositiveInt as PositiveInt
@@ -375,6 +382,51 @@ cellPropertiesView toMsg cell =
                             text "String"
                     ]
         ]
+
+
+
+-- DIFF
+
+
+type alias Diff =
+    Name.Store (Diff.DiffValue Cell Cell)
+
+
+type alias DiffError =
+    Diff.Error Never
+
+
+makeDiff : Grid -> Grid -> Diff
+makeDiff (Grid new) (Grid old) =
+    Diff.makeDiff
+        Name.empty
+        Name.insert
+        Name.merge
+        always
+        new.cells
+        old.cells
+
+
+applyDiff : Diff -> Grid -> Result DiffError Grid
+applyDiff diff (Grid data) =
+    Diff.applyDiff
+        Name.merge
+        Name.insert
+        Name.remove
+        (\new _ -> Ok new)
+        diff
+        data.cells
+        |> Result.map (\cells -> Grid { data | cells = cells })
+
+
+diffDecoder : (Name -> Maybe Types.SheetId) -> Decode.Decoder Diff
+diffDecoder getSheetId =
+    Name.storeDecoder (Diff.diffValueDecoder (cellDecoder getSheetId) (cellDecoder getSheetId))
+
+
+encodeDiff : (Types.SheetId -> Maybe Name) -> Diff -> Encode.Value
+encodeDiff getSheetName diff =
+    Name.encodeStore (Diff.encodeDiffValue (encodeCell getSheetName) (encodeCell getSheetName)) diff
 
 
 

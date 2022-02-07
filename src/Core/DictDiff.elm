@@ -1,6 +1,6 @@
-module Core.Diff exposing
-    ( DiffValue
-    , Error
+module Core.DictDiff exposing
+    ( Error
+    , ValueDiff
     , applyDiff
     , diffValueDecoder
     , encodeDiffValue
@@ -13,7 +13,7 @@ import Json.Decode as D
 import Json.Encode as E
 
 
-type DiffValue value subDiff
+type ValueDiff value subDiff
     = Added value
     | Removed value
     | Changed subDiff
@@ -40,7 +40,7 @@ type alias Insert k v d =
 
 makeDiff :
     diff
-    -> Insert key (DiffValue value subDiff) diff
+    -> Insert key (ValueDiff value subDiff) diff
     -> Merge key value value dict dict diff
     -> (value -> value -> subDiff)
     -> dict
@@ -65,7 +65,7 @@ makeDiff emptyDiff insertInDiff mergeDict makeSubItemDiff new old =
 
 
 applyDiff :
-    Merge key (DiffValue value subDiff) value diff dict (Result (Error subError) dict)
+    Merge key (ValueDiff value subDiff) value diff dict (Result (Error subError) dict)
     -> Insert key value dict
     -> (key -> dict -> dict)
     -> (subDiff -> value -> Result subError value)
@@ -111,7 +111,7 @@ applyDiff merge insert remove applySubDiff diff dict =
 
 
 revert :
-    ((key -> DiffValue v subDiff -> DiffValue v subDiff) -> diff -> diff)
+    ((key -> ValueDiff v subDiff -> ValueDiff v subDiff) -> diff -> diff)
     -> (subDiff -> subDiff)
     -> diff
     -> diff
@@ -135,7 +135,7 @@ revert map revertSubDiff diff =
 -- JSON
 
 
-encodeDiffValue : (v -> E.Value) -> (subDiff -> E.Value) -> DiffValue v subDiff -> E.Value
+encodeDiffValue : (v -> E.Value) -> (subDiff -> E.Value) -> ValueDiff v subDiff -> E.Value
 encodeDiffValue encodeValue encodeSubDiff dv =
     case dv of
         Added v ->
@@ -157,7 +157,7 @@ encodeDiffValue encodeValue encodeSubDiff dv =
                 ]
 
 
-diffValueDecoder : D.Decoder v -> D.Decoder subDiff -> D.Decoder (DiffValue v subDiff)
+diffValueDecoder : D.Decoder v -> D.Decoder subDiff -> D.Decoder (ValueDiff v subDiff)
 diffValueDecoder valueDecoder subDiffDecoder =
     D.field "type" D.string
         |> switch "this type does not exist"

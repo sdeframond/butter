@@ -165,7 +165,33 @@ zipMapSheets f (Model data) =
 
 
 type alias Diff =
-    IdDict.IdDict (Diff.DiffValue (Store.Item Sheet) (Store.Item Sheet))
+    IdDict.IdDict (Diff.DiffValue (Store.Item Sheet) ItemDiff)
+
+
+type alias ItemDiff =
+    Store.Item Sheet.Diff
+
+
+makeItemDiff : Store.Item Sheet -> Store.Item Sheet -> ItemDiff
+makeItemDiff new old =
+    { name = new.name
+    , position = new.position
+    , editStatus = Nothing
+    , value = Sheet.makeDiff new.value old.value
+    }
+
+
+applyItemDiff : ItemDiff -> Store.Item Sheet -> Result Sheet.DiffError (Store.Item Sheet)
+applyItemDiff diff item =
+    let
+        toItem value =
+            { name = diff.name
+            , position = diff.position
+            , editStatus = item.editStatus
+            , value = value
+            }
+    in
+    Sheet.applyDiff diff.value item.value |> Result.map toItem
 
 
 makeDiff : Model -> Model -> Diff
@@ -173,18 +199,18 @@ makeDiff (Model new) (Model old) =
     Diff.makeDiff IdDict.empty
         IdDict.insert
         Store.merge
-        always
+        makeItemDiff
         new.store
         old.store
 
 
-applyDiff : Diff -> Model -> Result (Diff.Error Never) Model
+applyDiff : Diff -> Model -> Result (Diff.Error Sheet.DiffError) Model
 applyDiff diff (Model { store }) =
     let
         merge ls bs rs diff_ dict =
             IdDict.merge ls bs rs diff_ (Store.toIdDict dict)
     in
-    Diff.applyDiff merge Store.insertItem Store.remove (\x _ -> Ok x) diff store
+    Diff.applyDiff merge Store.insertItem Store.remove applyItemDiff diff store
         |> Result.map (\s -> Model { store = s })
 
 
@@ -276,8 +302,11 @@ diffDecoder (Model model) =
     let
         itemDecoder =
             Store.getIdByName model.store |> Sheet.decoder |> Store.itemDecoder
+
+        itemDiffDecoder =
+            Store.getIdByName model.store |> Sheet.diffDecoder |> Store.itemDecoder
     in
-    IdDict.decoder (Diff.diffValueDecoder itemDecoder itemDecoder)
+    IdDict.decoder (Diff.diffValueDecoder itemDecoder itemDiffDecoder)
 
 
 encodeDiff : Model -> Diff -> Json.Encode.Value
@@ -285,5 +314,8 @@ encodeDiff (Model model) diff =
     let
         encodeItem =
             Store.getNameById model.store |> Sheet.encode |> Store.encodeItem
+
+        encodeItemDiff =
+            Store.getNameById model.store |> Sheet.encodeDiff |> Store.encodeItem
     in
-    IdDict.encode (Diff.encodeDiffValue encodeItem encodeItem) diff
+    IdDict.encode (Diff.encodeDiffValue encodeItem encodeItemDiff) diff
