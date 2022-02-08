@@ -18,7 +18,7 @@ module Grid exposing
     , view
     )
 
-import Core.Diff as Diff
+import Core.DictDiff as Diff
 import Core.Formula as Formula exposing (Formula)
 import Core.Name as Name exposing (Name)
 import Core.PositiveInt as PositiveInt
@@ -389,7 +389,7 @@ cellPropertiesView toMsg cell =
 
 
 type alias Diff =
-    Name.Store (Diff.DiffValue Cell Cell)
+    Name.Store (Diff.ValueDiff Cell Cell)
 
 
 type alias DiffError =

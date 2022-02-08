@@ -29,14 +29,15 @@ module Core.Document exposing
 
 import Bytes exposing (Bytes)
 import Bytes.Encode
-import Core.Diff as Diff
+import Core.DictDiff as Diff
+import Core.Frac as Frac exposing (Frac)
 import Core.FracStore as Store exposing (Store)
 import Core.IdDict as IdDict
 import Core.Name as Name exposing (Name)
 import Core.Types as Types
 import File.Download exposing (bytes)
-import Json.Decode
-import Json.Encode
+import Json.Decode as Decode
+import Json.Encode as Encode
 import Sheet exposing (Sheet)
 import Time
 import Zip
@@ -107,13 +108,8 @@ insertSheet : Sheet.Params -> Model -> Model
 insertSheet params (Model data) =
     Model
         { data
-            | store = Store.insert defaultSheetName (Sheet.fromParams params) data.store
+            | store = Store.createAfterCurrent defaultSheetName (Sheet.fromParams params) data.store
         }
-
-
-insert : Store.Id -> Store.Item Sheet -> Model -> Model
-insert id sheet (Model model) =
-    Model { model | store = Store.insertItem id sheet model.store }
 
 
 removeSheet : Types.SheetId -> Model -> Model
@@ -165,18 +161,28 @@ zipMapSheets f (Model data) =
 
 
 type alias Diff =
-    IdDict.IdDict (Diff.DiffValue (Store.Item Sheet) ItemDiff)
+    IdDict.IdDict (Diff.ValueDiff (Store.Item Sheet) ItemDiff)
 
 
 type alias ItemDiff =
-    Store.Item Sheet.Diff
+    { name : Maybe Name
+    , position : Maybe Frac
+    , value : Sheet.Diff
+    }
 
 
 makeItemDiff : Store.Item Sheet -> Store.Item Sheet -> ItemDiff
 makeItemDiff new old =
-    { name = new.name
-    , position = new.position
-    , editStatus = Nothing
+    let
+        newOrNothing a b =
+            if a /= b then
+                Just a
+
+            else
+                Nothing
+    in
+    { name = newOrNothing new.name old.name
+    , position = newOrNothing new.position old.position
     , value = Sheet.makeDiff new.value old.value
     }
 
@@ -185,8 +191,8 @@ applyItemDiff : ItemDiff -> Store.Item Sheet -> Result Sheet.DiffError (Store.It
 applyItemDiff diff item =
     let
         toItem value =
-            { name = diff.name
-            , position = diff.position
+            { name = diff.name |> Maybe.withDefault item.name
+            , position = diff.position |> Maybe.withDefault item.position
             , editStatus = item.editStatus
             , value = value
             }
@@ -212,6 +218,45 @@ applyDiff diff (Model { store }) =
     in
     Diff.applyDiff merge Store.insertItem Store.remove applyItemDiff diff store
         |> Result.map (\s -> Model { store = s })
+
+
+diffDecoder : Model -> Decode.Decoder Diff
+diffDecoder (Model model) =
+    let
+        itemDecoder =
+            Store.getIdByName model.store |> Sheet.decoder |> Store.itemDecoder
+
+        itemDiffDecoder =
+            Decode.map3 ItemDiff
+                (Decode.field "name" <| Decode.nullable Name.decoder)
+                (Decode.field "position" <| Decode.nullable Frac.decoder)
+                (Decode.field "value" <| Sheet.diffDecoder (Store.getIdByName model.store))
+    in
+    IdDict.decoder (Diff.diffValueDecoder itemDecoder itemDiffDecoder)
+
+
+encodeDiff : Model -> Diff -> Encode.Value
+encodeDiff (Model model) diff =
+    let
+        encodeItem =
+            Store.getNameById model.store |> Sheet.encode |> Store.encodeItem
+
+        encodeMaybe encodeValue m =
+            case m of
+                Just v ->
+                    encodeValue v
+
+                Nothing ->
+                    Encode.null
+
+        encodeItemDiff itemDiff =
+            Encode.object
+                [ ( "name", encodeMaybe Name.encode itemDiff.name )
+                , ( "position", encodeMaybe Frac.encode itemDiff.position )
+                , ( "value", Sheet.encodeDiff (Store.getNameById model.store) itemDiff.value )
+                ]
+    in
+    IdDict.encode (Diff.encodeDiffValue encodeItem encodeItemDiff) diff
 
 
 
@@ -241,7 +286,7 @@ eval ((Model data) as model) ( sheetId, ref ) ancestors =
 
 toBytes : Model -> Bytes
 toBytes doc =
-    Json.Encode.encode 2 (encode doc)
+    Encode.encode 2 (encode doc)
         |> (Bytes.Encode.encode << Bytes.Encode.string)
         |> Entry.compress
             { path = "/main.json"
@@ -263,7 +308,7 @@ fromBytes bytes =
             (\entry ->
                 case Entry.toString entry of
                     Ok string ->
-                        Json.Decode.decodeString decoder string
+                        Decode.decodeString decoder string
                             |> Result.toMaybe
 
                     Err _ ->
@@ -283,39 +328,15 @@ jsonKeys =
     }
 
 
-decoder : Json.Decode.Decoder Model
+decoder : Decode.Decoder Model
 decoder =
-    Json.Decode.map ModelData
-        (Json.Decode.field jsonKeys.store (Store.decoder Sheet.decoder))
-        |> Json.Decode.map Model
+    Decode.map ModelData
+        (Decode.field jsonKeys.store (Store.decoder Sheet.decoder))
+        |> Decode.map Model
 
 
-encode : Model -> Json.Encode.Value
+encode : Model -> Encode.Value
 encode (Model data) =
-    Json.Encode.object
+    Encode.object
         [ ( jsonKeys.store, Store.encode Sheet.encode data.store )
         ]
-
-
-diffDecoder : Model -> Json.Decode.Decoder Diff
-diffDecoder (Model model) =
-    let
-        itemDecoder =
-            Store.getIdByName model.store |> Sheet.decoder |> Store.itemDecoder
-
-        itemDiffDecoder =
-            Store.getIdByName model.store |> Sheet.diffDecoder |> Store.itemDecoder
-    in
-    IdDict.decoder (Diff.diffValueDecoder itemDecoder itemDiffDecoder)
-
-
-encodeDiff : Model -> Diff -> Json.Encode.Value
-encodeDiff (Model model) diff =
-    let
-        encodeItem =
-            Store.getNameById model.store |> Sheet.encode |> Store.encodeItem
-
-        encodeItemDiff =
-            Store.getNameById model.store |> Sheet.encodeDiff |> Store.encodeItem
-    in
-    IdDict.encode (Diff.encodeDiffValue encodeItem encodeItemDiff) diff

@@ -158,7 +158,7 @@ update msg model =
             )
 
         AddDocument ->
-            ( Store.insert defaultDocumentName Document.init model.documents
+            ( Store.createAfterCurrent defaultDocumentName Document.init model.documents
                 |> setDocumentStore model
             , Cmd.none
             )
@@ -182,7 +182,7 @@ update msg model =
 
         DocumentsBytesLoaded nameStr bytes ->
             ( Document.fromBytes bytes
-                |> Maybe.map (\doc -> Store.insert (Name.sanitize nameStr) doc model.documents)
+                |> Maybe.map (\doc -> Store.createAfterCurrent (Name.sanitize nameStr) doc model.documents)
                 |> Maybe.withDefault model.documents
                 |> setDocumentStore model
             , Cmd.none

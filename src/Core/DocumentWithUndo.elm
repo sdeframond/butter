@@ -28,7 +28,7 @@ module Core.DocumentWithUndo exposing
     )
 
 import Bytes exposing (Bytes)
-import Core.Diff as Diff
+import Core.DictDiff as Diff
 import Core.Document as Document
 import Core.Name exposing (Name)
 import Core.Types as Types

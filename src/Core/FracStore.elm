@@ -5,6 +5,7 @@ module Core.FracStore exposing
     , applyContentFrom
     , cancelEdits
     , commitEdits
+    , createAfterCurrent
     , current
     , currentId
     , currentName
@@ -17,7 +18,6 @@ module Core.FracStore exposing
     , getIdByName
     , getNameById
     , init
-    , insert
     , insertItem
     , itemDecoder
     , merge
@@ -164,8 +164,8 @@ compareItems a b =
     Frac.compare a.position b.position
 
 
-insert : Name -> a -> Store a -> Store a
-insert name value (Store data) =
+createAfterCurrent : Name -> a -> Store a -> Store a
+createAfterCurrent name value (Store data) =
     let
         finalName =
             if Name.member name data.nameIndex then
@@ -199,7 +199,7 @@ insert name value (Store data) =
     in
     Store
         { data
-            | items = ZipIdDict.insert data.nextId item data.items
+            | items = ZipIdDict.insertCurrent data.nextId item data.items
             , nameIndex = Name.insert finalName data.nextId data.nameIndex
             , nextId = Id.next data.nextId
         }

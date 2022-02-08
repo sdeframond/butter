@@ -8,6 +8,7 @@ module Core.ZipIdDict exposing
     , getCurrentItem
     , getNextItem
     , insert
+    , insertCurrent
     , map
     , mapState
     , merge
@@ -70,9 +71,18 @@ singleton id v =
     ZD id v IdDict.empty
 
 
+insertCurrent : Id -> v -> ZipIdDict v -> ZipIdDict v
+insertCurrent id v (ZD curId curItem dict) =
+    ZD id v (IdDict.insert curId curItem dict |> IdDict.remove id)
+
+
 insert : Id -> v -> ZipIdDict v -> ZipIdDict v
 insert id v (ZD curId curItem dict) =
-    ZD id v (IdDict.insert curId curItem dict |> IdDict.remove id)
+    if id == curId then
+        ZD id v dict
+
+    else
+        ZD curId curItem (IdDict.insert id v dict)
 
 
 remove : Id -> ZipIdDict v -> ZipIdDict v

@@ -35,8 +35,8 @@ suite =
                 let
                     store =
                         Store.init (Name.sanitize "first") 1
-                            |> Store.insert (Name.sanitize "second") 2
-                            |> Store.insert (Name.sanitize "third") 3
+                            |> Store.createAfterCurrent (Name.sanitize "second") 2
+                            |> Store.createAfterCurrent (Name.sanitize "third") 3
                 in
                 Store.commitEdits store
                     |> Expect.equal store
@@ -66,7 +66,7 @@ suite =
         , test "commitEdits does not change current name when it already exists" <|
             \_ ->
                 Store.init (Name.sanitize "first") 1
-                    |> Store.insert (Name.sanitize "second") 2
+                    |> Store.createAfterCurrent (Name.sanitize "second") 2
                     |> Store.updateCurrentEditedName "first"
                     |> Store.commitEdits
                     |> Store.currentName
@@ -75,7 +75,7 @@ suite =
         , test "commitEdits cancels edition when the name already exists" <|
             \_ ->
                 Store.init (Name.sanitize "first") 1
-                    |> Store.insert (Name.sanitize "second") 2
+                    |> Store.createAfterCurrent (Name.sanitize "second") 2
                     |> Store.updateCurrentEditedName "second"
                     |> Store.commitEdits
                     |> Store.getCurrentEditStatus
@@ -83,7 +83,7 @@ suite =
         , test "commitEdits does not update the name when it is a duplicate" <|
             \_ ->
                 Store.init (Name.sanitize "first") 1
-                    |> Store.insert (Name.sanitize "second") 2
+                    |> Store.createAfterCurrent (Name.sanitize "second") 2
                     |> Store.updateCurrentEditedName "second"
                     |> Store.commitEdits
                     |> toNameList
@@ -93,7 +93,7 @@ suite =
                 Store.init (Name.sanitize "first") 1
                     |> Store.updateCurrentEditedName "second"
                     |> Store.commitEdits
-                    |> Store.insert (Name.sanitize "second") 2
+                    |> Store.createAfterCurrent (Name.sanitize "second") 2
                     |> toNameList
                     |> Expect.equal [ "second", "second1" ]
         , test "editCurrentName set current edit status to the current item's name" <|
@@ -105,15 +105,15 @@ suite =
         , test ".insert selects the inserted item" <|
             \_ ->
                 Store.init (Name.sanitize "first") 1
-                    |> Store.insert (Name.sanitize "second") 2
+                    |> Store.createAfterCurrent (Name.sanitize "second") 2
                     |> Store.currentName
                     |> Name.toString
                     |> Expect.equal "second"
         , test ".insert inserts after the current item" <|
             \_ ->
                 Store.init (Name.sanitize "first") 1
-                    |> Store.insert (Name.sanitize "second") 2
-                    |> Store.insert (Name.sanitize "third") 3
+                    |> Store.createAfterCurrent (Name.sanitize "second") 2
+                    |> Store.createAfterCurrent (Name.sanitize "third") 3
                     |> toNameList
                     |> Expect.equal [ "first", "second", "third" ]
         , test ".current returns the current item" <|
